@@ -50,10 +50,19 @@ if [ -d "$DASHBOARD_PATH/www" ] && [ "$(version)" = "$VERSION" ]; then
 fi
 
 echo "Downloading dashboard from $DIRECT_DOWNLOAD_URL"
-curl -L --silent --show-error \
-     --header "Accept: application/octet-stream" \
-     --output "${RELEASE_ASSET_FILE}" \
-     "$DIRECT_DOWNLOAD_URL"
+for i in 1 2 3 4 5; do
+    if curl -L --silent --show-error --fail --http1.1 \
+        --header "Accept: application/octet-stream" \
+        --output "${RELEASE_ASSET_FILE}" \
+        "$DIRECT_DOWNLOAD_URL"; then
+        break
+    fi
+    if [ "$i" = 5 ]; then
+        exit 1
+    fi
+    echo "Dashboard download failed, retrying in 2 seconds ($i/5)" >&2
+    sleep 2
+done
 
 unzip -q "$RELEASE_ASSET_FILE" -d "$DASHBOARD_PATH"
 rm -rf "$DASHBOARD_PATH/www"

@@ -10,6 +10,7 @@ producer_test_() ->
      [
          fun matching_kafka_topics_returns_all_matches_in_rule_order/0,
          fun publish_plan_skips_sys_topics/0,
+         fun publish_plan_skips_when_no_rule_matches/0,
          fun publish_plan_returns_encoded_publish_for_matching_rule/0,
          fun on_message_publish_one_arity_returns_ok_when_disabled/0,
          fun on_message_publish_one_arity_returns_ok_when_no_rules_match/0,
@@ -17,6 +18,7 @@ producer_test_() ->
      ]}.
 
 setup() ->
+    emqx_plugin_kafka_config:purge(),
     application:get_env(emqx_plugin_kafka, producer).
 
 cleanup(undefined) ->
@@ -41,6 +43,13 @@ publish_plan_skips_sys_topics() ->
         {rules, [{<<"$SYS/#">>, <<"kafka-sys">>}]}
     ]),
     ?assertEqual(skip, emqx_plugin_kafka_producer:publish_plan(sys_message(), config())).
+
+publish_plan_skips_when_no_rule_matches() ->
+    application:set_env(emqx_plugin_kafka, producer, [
+        {enabled, true},
+        {rules, [{<<"alarm/#">>, <<"kafka-alarm">>}]}
+    ]),
+    ?assertEqual(skip, emqx_plugin_kafka_producer:publish_plan(message(), config())).
 
 publish_plan_returns_encoded_publish_for_matching_rule() ->
     application:set_env(emqx_plugin_kafka, producer, [

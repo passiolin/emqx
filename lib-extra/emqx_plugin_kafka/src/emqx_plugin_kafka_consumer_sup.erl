@@ -40,7 +40,7 @@ ensure_child_deleted(Id) ->
     end.
 
 init([]) ->
-    {ok, {{one_for_one, 0, 1}, []}}.
+    {ok, {{one_for_one, 10, 10}, []}}.
 
 post_init(_) ->
     ignore.

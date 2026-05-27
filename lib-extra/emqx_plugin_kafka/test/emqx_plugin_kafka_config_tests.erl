@@ -72,3 +72,21 @@ normalizes_binary_rules() ->
     ?assertEqual(true, maps:get(publish_base64, Producer)),
     ?assertEqual([{<<"a/+/c">>, <<"kafka_a">>}, {<<"b/#">>, <<"kafka_b">>}],
                  maps:get(rules, Producer)).
+
+cached_reads_live_env_when_not_loaded_test() ->
+    emqx_plugin_kafka_config:purge(),
+    application:set_env(emqx_plugin_kafka, client_id, fresh_cached_id),
+    ?assertEqual(fresh_cached_id,
+                 maps:get(client_id, emqx_plugin_kafka_config:cached())),
+    application:unset_env(emqx_plugin_kafka, client_id).
+
+reload_snapshots_until_next_reload_test() ->
+    application:set_env(emqx_plugin_kafka, client_id, id_v1),
+    emqx_plugin_kafka_config:reload(),
+    %% changing env after reload must NOT change cached() until the next reload
+    application:set_env(emqx_plugin_kafka, client_id, id_v2),
+    ?assertEqual(id_v1, maps:get(client_id, emqx_plugin_kafka_config:cached())),
+    emqx_plugin_kafka_config:reload(),
+    ?assertEqual(id_v2, maps:get(client_id, emqx_plugin_kafka_config:cached())),
+    emqx_plugin_kafka_config:purge(),
+    application:unset_env(emqx_plugin_kafka, client_id).

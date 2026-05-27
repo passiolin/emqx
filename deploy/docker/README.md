@@ -1,325 +1,359 @@
-# Quick reference
+# EMQX Kafka 插件版 Docker 镜像
 
-+ **Where to get help**:
+本目录用于构建和运行当前分支的 EMQX Docker 镜像。当前分支已经集成普通插件 `emqx_plugin_kafka`，`deploy/docker/Dockerfile` 默认会在构建阶段设置：
 
-  https://emqx.io or https://github.com/emqx/emqx
-
-+ **Where to file issues:**
-
-  https://github.com/emqx/emqx/issues
-
-+ **Supported architectures**
-
-  `amd64`, `arm64v8`,  `arm32v7`, `i386`, `s390x`
-
-
-+ **Supported Docker versions**:
-
-  [the latest release](https://github.com/docker/docker-ce/releases/latest)
-
-# What is EMQX
-
-[EMQX  MQTT broker](https://emqx.io/products/broker) is a fully open source, highly scalable, highly available distributed MQTT messaging broker for IoT, M2M and Mobile applications that can handle tens of millions of concurrent clients.
-
-Starting from 3.0 release, *EMQX* broker fully supports MQTT V5.0 protocol specifications and backward compatible with MQTT V3.1 and V3.1.1,  as well as other communication protocols such as MQTT-SN, CoAP, LwM2M, WebSocket and STOMP. The 3.0 release of the *EMQX* broker can scaled to 10+ million concurrent MQTT connections on one cluster.
-
-# How to use this image
-
-### Run emqx
-
-Execute some command under this docker image
-
-``docker run -d --name emqx emqx/emqx:$(tag)``
-
-For example
-
-``docker run -d --name emqx -p 18083:18083 -p 1883:1883 emqx/emqx:latest``
-
-The emqx broker runs as linux user `emqx` in the docker container.
-
-### Configuration
-
-Use the environment variable to configure the EMQX docker container.
-
-By default, the environment variables with ``EMQX_`` prefix are mapped to key-value pairs in configuration files.
-
-You can change the prefix by overriding "CUTTLEFISH_ENV_OVERRIDE_PREFIX".
-
-Example:
-
-```bash
-EMQX_LISTENER__SSL__EXTERNAL__ACCEPTORS <--> listener.ssl.external.acceptors
-EMQX_MQTT__MAX_PACKET_SIZE              <--> mqtt.max_packet_size
+```text
+EMQX_EXTRA_PLUGINS=emqx_plugin_kafka
 ```
 
-+ Prefix ``EMQX_`` is removed
-+ All upper case letters is replaced with lower case letters
-+ ``__`` is replaced with ``.``
+因此用本目录 Dockerfile 打出的镜像会包含 Kafka 插件、插件配置文件和 schema。
 
-If `CUTTLEFISH_ENV_OVERRIDE_PREFIX=DEV_` is set:
+## 快速构建
+
+在仓库根目录执行：
 
 ```bash
-DEV_LISTENER__SSL__EXTERNAL__ACCEPTORS <--> listener.ssl.external.acceptors
-DEV_MQTT__MAX_PACKET_SIZE              <--> mqtt.max_packet_size
+docker build -t emqx-kafka:4.4.19 -f deploy/docker/Dockerfile .
 ```
 
-Non mapped environment variables:
+如果需要显式覆盖 extra plugins：
 
 ```bash
+docker build -t emqx-kafka:4.4.19 \
+  --build-arg EMQX_EXTRA_PLUGINS=emqx_plugin_kafka \
+  -f deploy/docker/Dockerfile .
+```
+
+构建完成后检查插件文件：
+
+```bash
+docker run --rm --entrypoint sh emqx-kafka:4.4.19 -lc \
+  'test -f /opt/emqx/etc/plugins/emqx_plugin_kafka.conf && \
+   test -f /opt/emqx/lib/emqx_plugin_kafka-0.1.0/priv/emqx_plugin_kafka.schema'
+```
+
+## 快速运行
+
+启动 EMQX 并加载 Kafka 插件：
+
+```bash
+docker run -d --name emqx-kafka \
+  -p 1883:1883 \
+  -p 18083:18083 \
+  -e EMQX_LOADED_PLUGINS="emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_plugin_kafka" \
+  emqx-kafka:4.4.19
+```
+
+查看插件状态：
+
+```bash
+docker exec -it emqx-kafka emqx_ctl plugins list
+```
+
+查看日志：
+
+```bash
+docker logs -f emqx-kafka
+```
+
+进入容器：
+
+```bash
+docker exec -it emqx-kafka sh
+```
+
+EMQX 在容器内使用 Linux 用户 `emqx` 运行。
+
+## 连接宿主机 Kafka
+
+如果 Kafka 跑在宿主机上，Linux Docker 里建议使用 `host.docker.internal`：
+
+```bash
+docker run -d --name emqx-kafka \
+  --add-host=host.docker.internal:host-gateway \
+  -p 1883:1883 \
+  -p 18083:18083 \
+  -e EMQX_LOADED_PLUGINS="emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_plugin_kafka" \
+  -e EMQX_KAFKA__HOSTS=host.docker.internal:9092 \
+  emqx-kafka:4.4.19
+```
+
+如果 Kafka 在其他机器，把 `EMQX_KAFKA__HOSTS` 改成实际地址：
+
+```bash
+-e EMQX_KAFKA__HOSTS=10.10.10.244:9092
+```
+
+## Kafka 插件配置
+
+镜像内默认配置文件：
+
+```text
+/opt/emqx/etc/plugins/emqx_plugin_kafka.conf
+```
+
+常用环境变量示例：
+
+```bash
+-e EMQX_KAFKA__HOSTS=10.10.10.244:9092
+-e EMQX_KAFKA__CLIENT_ID=emqx_plugin_kafka
+-e EMQX_KAFKA__PRODUCER__ENABLED=true
+-e EMQX_KAFKA__PRODUCER__PUBLISH_BASE64=false
+-e EMQX_KAFKA__PRODUCER__RULE__1__MQTT_TOPIC="sensor/+/up"
+-e EMQX_KAFKA__PRODUCER__RULE__1__KAFKA_TOPIC="kafka_sensor_up"
+-e EMQX_KAFKA__CONSUMER__ENABLED=true
+-e EMQX_KAFKA__CONSUMER__GROUP_ID=emqx_plugin_kafka
+-e EMQX_KAFKA__CONSUMER__TOPICS=mqtt_downlink
+-e EMQX_KAFKA__CONSUMER__BEGIN_OFFSET=earliest
+```
+
+完整运行示例：
+
+```bash
+docker run -d --name emqx-kafka \
+  --add-host=host.docker.internal:host-gateway \
+  -p 1883:1883 \
+  -p 18083:18083 \
+  -e EMQX_LOADED_PLUGINS="emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_plugin_kafka" \
+  -e EMQX_KAFKA__HOSTS=host.docker.internal:9092 \
+  -e EMQX_KAFKA__PRODUCER__RULE__1__MQTT_TOPIC="sensor/+/up" \
+  -e EMQX_KAFKA__PRODUCER__RULE__1__KAFKA_TOPIC="kafka_sensor_up" \
+  -e EMQX_KAFKA__CONSUMER__ENABLED=true \
+  -e EMQX_KAFKA__CONSUMER__TOPICS=mqtt_downlink \
+  emqx-kafka:4.4.19
+```
+
+## EMQX 环境变量映射规则
+
+Docker 镜像会把 `EMQX_` 前缀的环境变量映射到配置项：
+
+- 去掉前缀 `EMQX_`
+- 大写转小写
+- 双下划线 `__` 转成点 `.`
+
+示例：
+
+```text
+EMQX_LISTENER__SSL__EXTERNAL__ACCEPTORS -> listener.ssl.external.acceptors
+EMQX_MQTT__MAX_PACKET_SIZE              -> mqtt.max_packet_size
+EMQX_KAFKA__HOSTS                       -> kafka.hosts
+```
+
+可以通过 `CUTTLEFISH_ENV_OVERRIDE_PREFIX` 修改前缀。例如：
+
+```bash
+docker run -d --name emqx \
+  -e CUTTLEFISH_ENV_OVERRIDE_PREFIX=DEV_ \
+  -e DEV_MQTT__MAX_PACKET_SIZE=1MB \
+  emqx-kafka:4.4.19
+```
+
+以下变量不按配置项映射，它们用于节点名：
+
+```text
 EMQX_NAME
 EMQX_HOST
 ```
 
-These environment variables will ignore for configuration file.
+如果设置了 `EMQX_NAME` 和 `EMQX_HOST`，且没有设置 `EMQX_NODE_NAME`，容器会使用：
 
-#### EMQX Configuration
-
-> NOTE: All EMQX Configuration in [etc/emqx.conf](https://github.com/emqx/emqx/blob/main-v4.3/etc/emqx.conf) could config by environment. The following list is just an example, not a complete configuration.
-
-| Options                    | Default            | Mapped                    | Description                           |
-| ---------------------------| ------------------ | ------------------------- | ------------------------------------- |
-| EMQX_NAME                  | container name     | none                      | emqx node short name                  |
-| EMQX_HOST                  | container IP       | none                      | emqx node host, IP or FQDN            |
-
-The list is incomplete and may changed with [etc/emqx.conf](https://github.com/emqx/emqx/blob/main-v4.3/etc/emqx.conf) and plugin configuration files. But the mapping rule is similar.
-
-If set ``EMQX_NAME`` and ``EMQX_HOST``, and unset ``EMQX_NODE_NAME``, ``EMQX_NODE_NAME=$EMQX_NAME@$EMQX_HOST``.
-
-For example, set mqtt tcp port to 1883
-
-``docker run -d --name emqx -e EMQX_LISTENER__TCP__EXTERNAL=1883 -p 18083:18083 -p 1883:1883 emqx/emqx:latest``
-
-#### EMQ Loaded Modules Configuration
-
-| Oprtions                 | Default            | Description                           |
-| ------------------------ | ------------------ | ------------------------------------- |
-| EMQX_LOADED_MODULES       | see content below  | default modules emqx loaded            |
-
-Default environment variable ``EMQX_LOADED_MODULES``, including
-
-+ ``emqx_mod_acl_internal``
-+ ``emqx_mod_presence``
-
-```bash
-# The default EMQX_LOADED_MODULES env
-EMQX_LOADED_MODULES="emqx_mod_acl_internal,emqx_mod_acl_internal"
+```text
+EMQX_NODE_NAME=$EMQX_NAME@$EMQX_HOST
 ```
 
-For example, set ``EMQX_LOADED_MODULES=emqx_mod_delayed,emqx_mod_rewrite`` to load these two modules.
+## 加载插件
 
-You can use comma, space or other separator that you want.
+默认常用插件：
 
-All the modules defined in env ``EMQX_LOADED_MODULES`` will be loaded.
-
-```bash
-EMQX_LOADED_MODULES="emqx_mod_delayed,emqx_mod_rewrite"
-EMQX_LOADED_MODULES="emqx_mod_delayed emqx_mod_rewrite"
-EMQX_LOADED_MODULES="emqx_mod_delayed | emqx_mod_rewrite"
+```text
+emqx_recon
+emqx_retainer
+emqx_management
+emqx_dashboard
 ```
 
-#### EMQ Loaded Plugins Configuration
+当前 Kafka 镜像运行时需要额外加载：
 
-| Oprtions                 | Default            | Description                           |
-| ------------------------ | ------------------ | ------------------------------------- |
-| EMQX_LOADED_PLUGINS       | see content below  | default plugins emqx loaded            |
-
-Default environment variable ``EMQX_LOADED_PLUGINS``, including
-
-+ ``emqx_recon``
-+ ``emqx_retainer``
-+ ``emqx_rule_engine``
-+ ``emqx_management``
-+ ``emqx_dashboard``
-
-```bash
-# The default EMQX_LOADED_PLUGINS env
-EMQX_LOADED_PLUGINS="emqx_recon,emqx_retainer,emqx_management,emqx_dashboard"
+```text
+emqx_plugin_kafka
 ```
 
-For example, set ``EMQX_LOADED_PLUGINS= emqx_auth_redis,emqx_auth_mysql`` to load these two plugins.
-
-You can use comma, space or other separator that you want.
-
-All the plugins defined in ``EMQX_LOADED_PLUGINS`` will be loaded.
+推荐：
 
 ```bash
-EMQX_LOADED_PLUGINS="emqx_auth_redis,emqx_auth_mysql"
-EMQX_LOADED_PLUGINS="emqx_auth_redis emqx_auth_mysql"
-EMQX_LOADED_PLUGINS="emqx_auth_redis | emqx_auth_mysql"
+-e EMQX_LOADED_PLUGINS="emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_plugin_kafka"
 ```
 
-#### EMQX Plugins Configuration
-
-The environment variables which with ``EMQX_`` prefix are mapped to all emqx plugins' configuration file, ``.`` get replaced by ``__``.
-
-Example:
+也可以容器启动后手动加载：
 
 ```bash
-EMQX_AUTH__REDIS__SERVER   <--> auth.redis.server
-EMQX_AUTH__REDIS__PASSWORD <--> auth.redis.password
+docker exec -it emqx-kafka emqx_ctl plugins load emqx_plugin_kafka
 ```
 
-Don't worry about where to find the configuration file of emqx plugins, this docker image will find and config them automatically using some magic.
+## 暴露端口
 
-All plugin of emqx project could config in this way, following the environment variables mapping rule above.
+常用端口：
 
-Assume you are using redis auth plugin, for example:
+| 端口 | 用途 |
+| --- | --- |
+| 1883 | MQTT TCP |
+| 8081 | Management API |
+| 8083 | WebSocket |
+| 8084 | WSS/HTTPS |
+| 8883 | MQTT SSL |
+| 18083 | Dashboard |
+| 4369 | epmd |
+| 4370 | Erlang distribution |
+| 5369 | gen_rpc |
+
+最小本地测试通常只需要：
 
 ```bash
-#EMQX_AUTH__REDIS__SERVER="redis.at.yourserver"
-#EMQX_AUTH__REDIS__PASSWORD="password_for_redis"
-
-docker run -d --name emqx -p 18083:18083 -p 1883:1883 -p 4369:4369 \
-    -e EMQX_LISTENER__TCP__EXTERNAL=1883 \
-    -e EMQX_LOADED_PLUGINS="emqx_auth_redis" \
-    -e EMQX_AUTH__REDIS__SERVER="your.redis.server:6379" \
-    -e EMQX_AUTH__REDIS__PASSWORD="password_for_redis" \
-    -e EMQX_AUTH__REDIS__PASSWORD_HASH=plain \
-    emqx/emqx:latest
+-p 1883:1883 -p 18083:18083
 ```
 
-For numbered configuration options where the number is next to a ``.`` such as:
+## 集群示例
 
-+ backend.redis.pool1.server
-+ backend.redis.hook.message.publish.1
+创建 `docker-compose.yaml`：
 
-You can configure an arbitrary number of them as long as each has a uniq unber for it's own configuration option:
+```yaml
+version: '3'
 
-```bash
-docker run -d --name emqx -p 18083:18083 -p 1883:1883 -p 4369:4369 \
-    -e EMQX_BACKEND_REDIS_POOL1__SERVER=127.0.0.1:6379
-    [...]
-    -e EMQX_BACKEND__REDIS__POOL5__SERVER=127.0.0.5:6379
-    -e EMQX_BACKEND__REDIS__HOOK_MESSAGE__PUBLISH__1='{"topic": "persistant/topic1", "action": {"function": "on_message_publish"}, "pool": "pool1"}'
-    -e EMQX_BACKEND__REDIS__HOOK_MESSAGE__PUBLISH__2='{"topic": "persistant/topic2", "action": {"function": "on_message_publish"}, "pool": "pool1"}'
-    -e EMQX_BACKEND__REDIS__HOOK_MESSAGE__PUBLISH__3='{"topic": "persistant/topic3", "action": {"function": "on_message_publish"}, "pool": "pool1"}'
-    [...]
-    -e EMQX_BACKEND__REDIS__HOOK_MESSAGE__PUBLISH__13='{"topic": "persistant/topic13", "action": {"function": "on_message_publish"}, "pool": "pool1"}'
-    emqx/emqx:latest
-```
-
-### Cluster
-
-EMQX supports a variety of clustering methods, see our [documentation](https://docs.emqx.io/broker/latest/en/advanced/cluster.html#emqx-service-discovery) for details.
-
-Let's create a static node list cluster from docker-compose.
-
-+ Create `docker-compose.yaml`:
-
-  ```yaml
-  version: '3'
-
-  services:
-    emqx1:
-      image: emqx/emqx:latest
-      environment:
-      - "EMQX_NAME=emqx"
-      - "EMQX_HOST=node1.emqx.io"
-      - "EMQX_CLUSTER__DISCOVERY=static"
-      - "EMQX_CLUSTER__STATIC__SEEDS=emqx@node1.emqx.io, emqx@node2.emqx.io"
-      networks:
-        emqx-bridge:
-          aliases:
+services:
+  emqx1:
+    image: emqx-kafka:4.4.19
+    environment:
+      - EMQX_NAME=emqx
+      - EMQX_HOST=node1.emqx.io
+      - EMQX_CLUSTER__DISCOVERY=static
+      - EMQX_CLUSTER__STATIC__SEEDS=emqx@node1.emqx.io,emqx@node2.emqx.io
+      - EMQX_LOADED_PLUGINS=emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_plugin_kafka
+    networks:
+      emqx-bridge:
+        aliases:
           - node1.emqx.io
 
-    emqx2:
-      image: emqx/emqx:latest
-      environment:
-      - "EMQX_NAME=emqx"
-      - "EMQX_HOST=node2.emqx.io"
-      - "EMQX_CLUSTER__DISCOVERY=static"
-      - "EMQX_CLUSTER__STATIC__SEEDS=emqx@node1.emqx.io, emqx@node2.emqx.io"
-      networks:
-        emqx-bridge:
-          aliases:
+  emqx2:
+    image: emqx-kafka:4.4.19
+    environment:
+      - EMQX_NAME=emqx
+      - EMQX_HOST=node2.emqx.io
+      - EMQX_CLUSTER__DISCOVERY=static
+      - EMQX_CLUSTER__STATIC__SEEDS=emqx@node1.emqx.io,emqx@node2.emqx.io
+      - EMQX_LOADED_PLUGINS=emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_plugin_kafka
+    networks:
+      emqx-bridge:
+        aliases:
           - node2.emqx.io
 
-  networks:
-    emqx-bridge:
-      driver: bridge
+networks:
+  emqx-bridge:
+    driver: bridge
+```
 
-  ```
+启动：
 
-+ Start the docker-compose cluster
+```bash
+docker compose -p my_emqx up -d
+```
 
-  ```bash
-  docker compose -p my_emqx up -d
-  ```
+查看集群状态：
 
-+ View cluster
+```bash
+docker exec -it my_emqx-emqx1-1 sh -c "emqx_ctl cluster status"
+```
 
-  ```bash
-  $ docker exec -it my_emqx_emqx1_1 sh -c "emqx_ctl cluster status"
-  Cluster status: #{running_nodes => ['emqx@node1.emqx.io','emqx@node2.emqx.io'],
-                    stopped_nodes => []}
-  ```
+## 持久化
 
-### Persistence
+需要持久化时，建议保留：
 
-If you want to persist the EMQX docker container, you need to keep the following directories:
+```text
+/opt/emqx/data
+/opt/emqx/etc
+/opt/emqx/log
+```
 
-+ `/opt/emqx/data`
-+ `/opt/emqx/etc`
-+ `/opt/emqx/log`
+注意：部分数据会写在 `/opt/emqx/data/mnesia/${node_name}` 下。复用数据卷时，需要保持节点名一致，通常要固定：
 
-Since data in these folders are partially stored under the `/opt/emqx/data/mnesia/${node_name}`, the user also needs to reuse the same node name to see the previous state. In detail, one needs to specify the two environment variables: `EMQX_NAME` and `EMQX_HOST`, `EMQX_HOST` set as `127.0.0.1` or network alias would be useful.
+```text
+EMQX_NAME
+EMQX_HOST
+```
 
-In if you use docker-compose, the configuration would look something like this:
+docker compose 示例：
 
-```YAML
+```yaml
 volumes:
   vol-emqx-data:
-    name: foo-emqx-data
   vol-emqx-etc:
-    name: foo-emqx-etc
   vol-emqx-log:
-    name: foo-emqx-log
 
 services:
   emqx:
-    image: emqx/emqx:v4.0.0
+    image: emqx-kafka:4.4.19
     restart: always
     environment:
-      EMQX_NAME: foo_emqx
+      EMQX_NAME: emqx
       EMQX_HOST: 127.0.0.1
+      EMQX_LOADED_PLUGINS: emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_plugin_kafka
     volumes:
       - vol-emqx-data:/opt/emqx/data
       - vol-emqx-etc:/opt/emqx/etc
       - vol-emqx-log:/opt/emqx/log
 ```
 
-### Kernel Tuning
+## 内核参数
 
-Under linux host machine, the easiest way is [Tuning guide](https://docs.emqx.io/en/broker/latest/tutorial/tune.html#linux-kernel-tuning).
-
-If you want tune linux kernel by docker, you must ensure your docker is latest version (>=1.12).
+Linux 宿主机上应优先在宿主机调优。也可以给 Docker 容器传入 `--sysctl`：
 
 ```bash
-
-docker run -d --name emqx -p 18083:18083 -p 1883:1883 -p 4369:4369 \
-    --sysctl fs.file-max=2097152 \
-    --sysctl fs.nr_open=2097152 \
-    --sysctl net.core.somaxconn=32768 \
-    --sysctl net.ipv4.tcp_max_syn_backlog=16384 \
-    --sysctl net.core.netdev_max_backlog=16384 \
-    --sysctl net.ipv4.ip_local_port_range=1000 65535 \
-    --sysctl net.core.rmem_default=262144 \
-    --sysctl net.core.wmem_default=262144 \
-    --sysctl net.core.rmem_max=16777216 \
-    --sysctl net.core.wmem_max=16777216 \
-    --sysctl net.core.optmem_max=16777216 \
-    --sysctl net.ipv4.tcp_rmem=1024 4096 16777216 \
-    --sysctl net.ipv4.tcp_wmem=1024 4096 16777216 \
-    --sysctl net.ipv4.tcp_max_tw_buckets=1048576 \
-    --sysctl net.ipv4.tcp_fin_timeout=15 \
-    emqx/emqx:latest
-
+docker run -d --name emqx-kafka \
+  -p 1883:1883 \
+  -p 18083:18083 \
+  --sysctl fs.file-max=2097152 \
+  --sysctl fs.nr_open=2097152 \
+  --sysctl net.core.somaxconn=32768 \
+  --sysctl net.ipv4.tcp_max_syn_backlog=16384 \
+  --sysctl net.core.netdev_max_backlog=16384 \
+  --sysctl net.ipv4.ip_local_port_range="1000 65535" \
+  --sysctl net.ipv4.tcp_fin_timeout=15 \
+  -e EMQX_LOADED_PLUGINS="emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_plugin_kafka" \
+  emqx-kafka:4.4.19
 ```
 
-> REMEMBER: DO NOT RUN EMQX DOCKER PRIVILEGED OR MOUNT SYSTEM PROC IN CONTAINER TO TUNE LINUX KERNEL, IT IS UNSAFE.
+不要用特权容器或挂载宿主机 `/proc` 的方式调内核参数。
 
-### Thanks
+## 常见问题
 
-+ [@je-al](https://github.com/emqx/emqx-docker/issues/2)
-+ [@RaymondMouthaan](https://github.com/emqx/emqx-docker/pull/91)
-+ [@zhongjiewu](https://github.com/emqx/emqx/issues/3427)
+### 镜像里没有 Kafka 插件
+
+确认使用的是当前分支的 Dockerfile：
+
+```bash
+docker build -t emqx-kafka:4.4.19 -f deploy/docker/Dockerfile .
+```
+
+并检查：
+
+```bash
+docker run --rm --entrypoint sh emqx-kafka:4.4.19 -lc \
+  'ls /opt/emqx/lib | grep emqx_plugin_kafka && \
+   ls /opt/emqx/etc/plugins/emqx_plugin_kafka.conf'
+```
+
+### 插件没有启动
+
+确认 `EMQX_LOADED_PLUGINS` 包含 `emqx_plugin_kafka`，或手动加载：
+
+```bash
+docker exec -it emqx-kafka emqx_ctl plugins load emqx_plugin_kafka
+```
+
+### Kafka 连接失败
+
+检查：
+
+- `EMQX_KAFKA__HOSTS` 是否配置正确。
+- Kafka `advertised.listeners` 是否能被 EMQX 容器访问。
+- Kafka topic 是否存在，或 Kafka 是否允许自动创建 topic。
+- 如果 Kafka 在宿主机上，是否添加了 `--add-host=host.docker.internal:host-gateway`。

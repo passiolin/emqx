@@ -3,7 +3,7 @@
   {vsn, "0.1.0"},
   {registered, [emqx_plugin_kafka_sup]},
   {mod, {emqx_plugin_kafka_app, []}},
-  {applications, [kernel, stdlib, emqx, brod]},
+  {applications, [kernel, stdlib, supervisor3, brod]},
   {env, []},
   {modules, []},
   {licenses, ["Apache-2.0"]},

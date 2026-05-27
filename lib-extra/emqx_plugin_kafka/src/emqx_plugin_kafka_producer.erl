@@ -10,7 +10,7 @@
 -endif.
 
 on_message_publish(Msg) ->
-    Conf = emqx_plugin_kafka_config:get(),
+    Conf = emqx_plugin_kafka_config:cached(),
     case publish_plan(Msg, Conf) of
         {ok, Plans} ->
             ClientId = maps:get(client_id, Conf),
@@ -26,13 +26,14 @@ publish_plan(_Msg, #{producer := #{enabled := false}}) ->
     skip;
 publish_plan(Msg = #message{topic = Topic}, #{producer := Producer}) ->
     Rules = maps:get(rules, Producer, []),
-    PublishBase64 = maps:get(publish_base64, Producer, false),
-    {Key, Json} = emqx_plugin_kafka_payload:encode_publish(Msg, PublishBase64),
-    Plans = [
-        {KafkaTopic, Key, Json}
-     || KafkaTopic <- matching_kafka_topics(Topic, Rules)
-    ],
-    {ok, Plans}.
+    case matching_kafka_topics(Topic, Rules) of
+        [] ->
+            skip;
+        KafkaTopics ->
+            PublishBase64 = maps:get(publish_base64, Producer, false),
+            {Key, Json} = emqx_plugin_kafka_payload:encode_publish(Msg, PublishBase64),
+            {ok, [{KafkaTopic, Key, Json} || KafkaTopic <- KafkaTopics]}
+    end.
 
 matching_kafka_topics(Topic, Rules) ->
     [

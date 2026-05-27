@@ -23,12 +23,20 @@ COPY . /emqx
 
 ARG PKG_VSN
 ARG EMQX_NAME=emqx
+ARG EMQX_EXTRA_PLUGINS=emqx_plugin_kafka
 
 ENV EMQX_RELUP=false
+ENV EMQX_EXTRA_PLUGINS=$EMQX_EXTRA_PLUGINS
 
 RUN cd /emqx \
     && rm -rf _build/$EMQX_NAME/lib \
-    && make $EMQX_NAME
+    && make $EMQX_NAME \
+    && case ",$EMQX_EXTRA_PLUGINS," in \
+         *,emqx_plugin_kafka,*|*,all,*) \
+           test -f _build/$EMQX_NAME/rel/emqx/etc/plugins/emqx_plugin_kafka.conf \
+           && test -f _build/$EMQX_NAME/rel/emqx/lib/emqx_plugin_kafka-0.1.0/priv/emqx_plugin_kafka.schema ;; \
+         *) true ;; \
+       esac
 
 FROM $RUN_FROM
 

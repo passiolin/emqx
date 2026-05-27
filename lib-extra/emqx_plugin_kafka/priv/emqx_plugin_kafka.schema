@@ -51,8 +51,19 @@
 {translation, "emqx_plugin_kafka.kafka_hosts", fun(Conf) ->
   Hosts0 = cuttlefish:conf_get("kafka.hosts", Conf),
   Hosts = [string:strip(Host) || Host <- string:tokens(Hosts0, ",")],
+  ToPort = fun(PortStr) ->
+             case string:strip(PortStr) of
+               "" -> 9092;
+               P ->
+                 case catch list_to_integer(P) of
+                   Port when is_integer(Port), Port > 0, Port =< 65535 -> Port;
+                   _ -> cuttlefish:invalid("kafka.hosts: invalid port in '" ++ PortStr ++ "'")
+                 end
+             end
+           end,
   [case string:split(Host, ":", trailing) of
-     [Domain, Port] -> {Domain, list_to_integer(Port)}
+     [Domain, Port] -> {string:strip(Domain), ToPort(Port)};
+     [Domain] -> {string:strip(Domain), 9092}
    end || Host <- Hosts, Host =/= ""]
 end}.
 

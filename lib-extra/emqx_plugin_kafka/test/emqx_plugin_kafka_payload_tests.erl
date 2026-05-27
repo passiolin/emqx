@@ -29,6 +29,13 @@ encode_publish_omits_missing_username_test() ->
     Payload = emqx_json:decode(Json, [return_maps]),
     ?assertNot(maps:is_key(<<"username">>, Payload)).
 
+encode_publish_coerces_atom_from_to_binary_test() ->
+    Msg = (message(<<"hello">>))#message{from = sys_internal, headers = #{}},
+    {Key, Json} = emqx_plugin_kafka_payload:encode_publish(Msg, false),
+    ?assertEqual(<<"sys_internal">>, Key),
+    Payload = emqx_json:decode(Json, [return_maps]),
+    ?assertEqual(<<"sys_internal">>, maps:get(<<"clientid">>, Payload)).
+
 decode_consumer_valid_payload_test() ->
     Json = <<"{\"topic\":\"down/a\",\"qos\":1,\"payload\":\"hello\"}">>,
     {ok, Msg} = emqx_plugin_kafka_payload:decode_consumer(Json),

@@ -7,9 +7,10 @@
 -define(FROM, <<"emqx_plugin_kafka">>).
 
 encode_publish(Msg = #message{}, PublishBase64) ->
+    From = from_bin(Msg#message.from),
     Payload = #{
         action => <<"message_publish">>,
-        clientid => Msg#message.from,
+        clientid => From,
         topic => Msg#message.topic,
         qos => Msg#message.qos,
         payload => encode_payload(Msg#message.payload, PublishBase64),
@@ -17,7 +18,7 @@ encode_publish(Msg = #message{}, PublishBase64) ->
         timestamp => Msg#message.timestamp
     },
     Json = emqx_json:encode(maybe_put_username(Msg#message.headers, Payload)),
-    {Msg#message.from, Json}.
+    {From, Json}.
 
 decode_consumer(Json) ->
     case emqx_json:safe_decode(Json, [return_maps]) of
@@ -53,6 +54,13 @@ encode_payload(Payload, true) ->
     base64:encode(Payload);
 encode_payload(Payload, false) ->
     Payload.
+
+%% #message.from is atom() | binary(); coerce to binary so it is valid as both
+%% the Kafka message key (must be iodata) and a JSON value.
+from_bin(From) when is_binary(From) ->
+    From;
+from_bin(From) when is_atom(From) ->
+    atom_to_binary(From, utf8).
 
 maybe_put_username(Headers, Payload) ->
     case maps:find(username, Headers) of

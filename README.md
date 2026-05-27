@@ -142,16 +142,19 @@ kafka.consumer.topics = mqtt_downlink
 kafka.consumer.begin_offset = earliest
 ```
 
-如果需要配置复杂的 `brod_client_config`、`producer_config` 或 `consumer_config`，可以改用 Erlang 配置文件：
+如果需要配置复杂的 `brod_client_config`、`producer_config` 或 `consumer_config`，可以手动创建 Erlang 配置文件：
 
 ```text
 _build/emqx/rel/emqx/etc/plugins/emqx_plugin_kafka.config
 ```
 
-源码示例在：
+该文件默认不存在，需要自己按 Erlang term 格式创建，内容形如：
 
-```text
-lib-extra/emqx_plugin_kafka/etc/emqx_plugin_kafka.config
+```erlang
+[{emqx_plugin_kafka,
+  [{brod_client_config, []},
+   {producer_config, []},
+   {consumer_config, []}]}].
 ```
 
 注意：如果 `.config` 存在，EMQX 插件加载逻辑会优先读取 `.config`，不会再用 `.conf + schema` 生成配置。
@@ -247,52 +250,10 @@ docker run --rm \
 
 ## 打 Docker 镜像
 
-注意：仓库自带的 `deploy/docker/Dockerfile` 里执行的是 `make emqx`，默认不会设置 `EMQX_EXTRA_PLUGINS=emqx_plugin_kafka`。为了避免打出的镜像漏掉插件，推荐用下面的 Dockerfile 片段构建镜像。它和官方 Dockerfile 一样使用 Alpine builder + Alpine runtime，但在 builder 阶段显式启用 Kafka 插件。
+`deploy/docker/Dockerfile` 已经改成默认编译 `emqx_plugin_kafka`。直接用仓库里的 Dockerfile 构建即可：
 
 ```bash
-docker build -t emqx-kafka:4.4.19 -f - . <<'EOF'
-ARG BUILD_FROM=ghcr.io/emqx/emqx-builder/4.4-20:24.3.4.2-1-alpine3.15.1
-ARG RUN_FROM=alpine:3.15.1
-
-FROM ${BUILD_FROM} AS builder
-
-RUN apk add --no-cache \
-    git curl gcc g++ make perl ncurses-dev openssl-dev coreutils \
-    bsd-compat-headers libc-dev libstdc++ bash tzdata jq
-
-COPY . /emqx
-
-ENV EMQX_RELUP=false
-ENV EMQX_EXTRA_PLUGINS=emqx_plugin_kafka
-
-RUN cd /emqx \
-    && rm -rf _build/emqx/lib \
-    && make emqx
-
-FROM alpine:3.15.1
-
-COPY deploy/docker/docker-entrypoint.sh /usr/bin/
-COPY --from=builder /emqx/_build/emqx/rel/emqx /opt/emqx
-
-RUN ln -s /opt/emqx/bin/* /usr/local/bin/ \
-    && apk add --no-cache curl ncurses-libs openssl sudo libstdc++ bash tzdata \
-    && adduser -D -u 1000 emqx \
-    && echo "emqx ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers \
-    && chgrp -Rf emqx /opt/emqx \
-    && chmod -Rf g+w /opt/emqx \
-    && chown -Rf emqx /opt/emqx \
-    && chmod +x /usr/bin/docker-entrypoint.sh
-
-WORKDIR /opt/emqx
-USER emqx
-
-VOLUME ["/opt/emqx/log", "/opt/emqx/data"]
-
-EXPOSE 1883 8081 8083 8084 8883 11883 18083 4369 4370 5369 6369 6370
-
-ENTRYPOINT ["/usr/bin/docker-entrypoint.sh"]
-CMD ["/opt/emqx/bin/emqx", "foreground"]
-EOF
+docker build -t emqx-kafka:4.4.19 -f deploy/docker/Dockerfile .
 ```
 
 构建完成后可确认镜像里包含插件配置：
@@ -301,6 +262,14 @@ EOF
 docker run --rm --entrypoint sh emqx-kafka:4.4.19 -lc \
   'test -f /opt/emqx/etc/plugins/emqx_plugin_kafka.conf && \
    test -f /opt/emqx/lib/emqx_plugin_kafka-0.1.0/priv/emqx_plugin_kafka.schema'
+```
+
+如果要覆盖 extra plugins，可以传 build arg：
+
+```bash
+docker build -t emqx-kafka:4.4.19 \
+  --build-arg EMQX_EXTRA_PLUGINS=emqx_plugin_kafka \
+  -f deploy/docker/Dockerfile .
 ```
 
 运行镜像：

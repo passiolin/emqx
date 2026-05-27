@@ -1,8 +1,9 @@
 -module(emqx_plugin_kafka_config).
 
--export([get/0]).
+-export([get/0, reload/0, cached/0, purge/0]).
 
 -define(APP, emqx_plugin_kafka).
+-define(PT_KEY, {?APP, config}).
 
 get() ->
     #{
@@ -14,6 +15,25 @@ get() ->
         producer => producer(application:get_env(?APP, producer, [])),
         consumer => consumer(application:get_env(?APP, consumer, []))
     }.
+
+%% Cache the computed config in persistent_term so the message.publish hot path
+%% does not rebuild it (7 app env reads + rule normalization) on every message.
+%% Plugin config is static between (un)load, so the cache is refreshed on app
+%% start (reload/0) and cleared on app stop (purge/0).
+reload() ->
+    Conf = ?MODULE:get(),
+    persistent_term:put(?PT_KEY, Conf),
+    Conf.
+
+cached() ->
+    case persistent_term:get(?PT_KEY, undefined) of
+        undefined -> ?MODULE:get();
+        Conf -> Conf
+    end.
+
+purge() ->
+    _ = persistent_term:erase(?PT_KEY),
+    ok.
 
 producer(Opts) ->
     #{
