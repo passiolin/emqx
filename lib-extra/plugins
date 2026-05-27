@@ -1,5 +1,6 @@
 {erlang_plugins,
   [ {emqx_plugin_template, {git, "https://github.com/emqx/emqx-plugin-template", {tag, "4.3.0"}}}
+  , {emqx_plugin_kafka, {path, "lib-extra/emqx_plugin_kafka"}}
   ]
 }.
 

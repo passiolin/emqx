@@ -87,7 +87,7 @@ alternative_lib_dir() ->
     end.
 
 project_app_dirs() ->
-    ["apps/*", alternative_lib_dir() ++ "/*", "."].
+    ["apps/*", alternative_lib_dir() ++ "/*", "lib-extra/*", "."].
 
 plugins(HasElixir) ->
     [ {relup_helper,{git,"https://github.com/emqx/relup_helper", {tag, "2.1.0"}}}
@@ -109,7 +109,7 @@ test_plugins() ->
 test_deps() ->
     [ {bbmustache, "1.10.0"}
     , {emqx_ct_helpers, {git, "https://github.com/emqx/emqx-ct-helpers", {tag, "1.3.11"}}}
-    , meck
+    , {meck, "0.8.13"}
     ].
 
 common_compile_opts() ->

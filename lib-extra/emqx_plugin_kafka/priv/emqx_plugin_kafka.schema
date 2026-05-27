@@ -1,0 +1,89 @@
+%%-*- mode: erlang -*-
+
+{mapping, "kafka.hosts", "emqx_plugin_kafka.kafka_hosts", [
+  {default, "127.0.0.1:9092"},
+  {datatype, string}
+]}.
+
+{mapping, "kafka.client_id", "emqx_plugin_kafka.client_id", [
+  {default, "emqx_plugin_kafka_client"},
+  {datatype, string}
+]}.
+
+{mapping, "kafka.producer.enabled", "emqx_plugin_kafka.producer", [
+  {default, true},
+  {datatype, {enum, [true, false]}}
+]}.
+
+{mapping, "kafka.producer.publish_base64", "emqx_plugin_kafka.producer", [
+  {default, false},
+  {datatype, {enum, [true, false]}}
+]}.
+
+{mapping, "kafka.producer.rule.$id.mqtt_topic", "emqx_plugin_kafka.producer", [
+  {datatype, string}
+]}.
+
+{mapping, "kafka.producer.rule.$id.kafka_topic", "emqx_plugin_kafka.producer", [
+  {datatype, string}
+]}.
+
+{mapping, "kafka.consumer.enabled", "emqx_plugin_kafka.consumer", [
+  {default, false},
+  {datatype, {enum, [true, false]}}
+]}.
+
+{mapping, "kafka.consumer.group_id", "emqx_plugin_kafka.consumer", [
+  {default, "emqx_plugin_kafka"},
+  {datatype, string}
+]}.
+
+{mapping, "kafka.consumer.topics", "emqx_plugin_kafka.consumer", [
+  {default, ""},
+  {datatype, string}
+]}.
+
+{mapping, "kafka.consumer.begin_offset", "emqx_plugin_kafka.consumer", [
+  {default, earliest},
+  {datatype, {enum, [earliest, latest]}}
+]}.
+
+{translation, "emqx_plugin_kafka.kafka_hosts", fun(Conf) ->
+  Hosts0 = cuttlefish:conf_get("kafka.hosts", Conf),
+  Hosts = [string:strip(Host) || Host <- string:tokens(Hosts0, ",")],
+  [case string:split(Host, ":", trailing) of
+     [Domain, Port] -> {Domain, list_to_integer(Port)}
+   end || Host <- Hosts, Host =/= ""]
+end}.
+
+{translation, "emqx_plugin_kafka.client_id", fun(Conf) ->
+  list_to_atom(cuttlefish:conf_get("kafka.client_id", Conf))
+end}.
+
+{translation, "emqx_plugin_kafka.producer", fun(Conf) ->
+  Enabled = cuttlefish:conf_get("kafka.producer.enabled", Conf),
+  PublishBase64 = cuttlefish:conf_get("kafka.producer.publish_base64", Conf),
+  RuleItems = cuttlefish_variable:filter_by_prefix("kafka.producer.rule", Conf),
+  RuleIds = lists:usort([Id || {[_, _, _, Id, _], _} <- RuleItems]),
+  Find = fun(Id, Key) ->
+           proplists:get_value(["kafka", "producer", "rule", Id, Key], RuleItems)
+         end,
+  Rules = [{unicode:characters_to_binary(MqttTopic),
+            unicode:characters_to_binary(KafkaTopic)}
+           || Id <- RuleIds,
+              (MqttTopic = Find(Id, "mqtt_topic")) =/= undefined,
+              (KafkaTopic = Find(Id, "kafka_topic")) =/= undefined],
+  [{enabled, Enabled},
+   {publish_base64, PublishBase64},
+   {rules, Rules}]
+end}.
+
+{translation, "emqx_plugin_kafka.consumer", fun(Conf) ->
+  Topics0 = cuttlefish:conf_get("kafka.consumer.topics", Conf),
+  Topics = [unicode:characters_to_binary(string:strip(Topic))
+            || Topic <- string:tokens(Topics0, ","), string:strip(Topic) =/= ""],
+  [{enabled, cuttlefish:conf_get("kafka.consumer.enabled", Conf)},
+   {group_id, unicode:characters_to_binary(cuttlefish:conf_get("kafka.consumer.group_id", Conf))},
+   {topics, Topics},
+   {begin_offset, cuttlefish:conf_get("kafka.consumer.begin_offset", Conf)}]
+end}.

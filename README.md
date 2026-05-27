@@ -1,139 +1,455 @@
-# EMQX Broker
+# EMQX 4.4 Kafka 插件版
 
-[![GitHub Release](https://img.shields.io/github/release/emqx/emqx?color=brightgreen)](https://github.com/emqx/emqx/releases)
-[![Build Status](https://travis-ci.org/emqx/emqx.svg)](https://travis-ci.org/emqx/emqx)
-[![Coverage Status](https://coveralls.io/repos/github/emqx/emqx/badge.svg?branch=master)](https://coveralls.io/github/emqx/emqx?branch=master)
-[![Docker Pulls](https://img.shields.io/docker/pulls/emqx/emqx)](https://hub.docker.com/r/emqx/emqx)
-[![Slack](https://img.shields.io/badge/Slack-EMQ-39AE85?logo=slack)](https://slack-invite.emqx.io/)
-[![Twitter](https://img.shields.io/badge/Follow-EMQ-1DA1F2?logo=twitter)](https://twitter.com/EMQTech)
-[![YouTube](https://img.shields.io/badge/Subscribe-EMQ-FF0000?logo=youtube)](https://www.youtube.com/channel/UC5FjR77ErAxvZENEWzQaO5Q)
+这个分支基于 EMQX 4.4.x 社区版源码，新增了普通插件 `emqx_plugin_kafka`。插件不接入 Rule Engine，也不改 Dashboard，通过 EMQX 普通插件机制加载。
 
-English | [简体中文](./README-CN.md) | [日本語](./README-JP.md) | [русский](./README-RU.md)
+## 当前改动
 
-*EMQX* broker is a fully open source, highly scalable, highly available distributed MQTT messaging broker for IoT, M2M and Mobile applications that can handle tens of millions of concurrent clients.
+新增插件目录：
 
-Starting from 3.0 release, *EMQX* broker fully supports MQTT V5.0 protocol specifications and backward compatible with MQTT V3.1 and V3.1.1,  as well as other communication protocols such as MQTT-SN, CoAP, LwM2M, WebSocket and STOMP. The 3.0 release of the *EMQX* broker can scaled to 10+ million concurrent MQTT connections on one cluster.
-
-- For full list of new features, please read [EMQX Release Notes](https://github.com/emqx/emqx/releases).
-- For more information, please visit [EMQX homepage](https://www.emqx.io).
-
-## Installation
-
-The *EMQX* broker is cross-platform, which supports Linux, Unix, macOS and Windows. It means *EMQX* can be deployed on x86_64 architecture servers and ARM devices like Raspberry Pi.
-
-See more details for building and running *EMQX* on Windows in [Windows.md](./Windows.md)
-
-#### Installing via EMQX Docker Image
-
-```
-docker run -d --name emqx -p 1883:1883 -p 8081:8081 -p 8083:8083 -p 8883:8883 -p 8084:8084 -p 18083:18083 emqx/emqx
+```text
+lib-extra/emqx_plugin_kafka
 ```
 
-#### Installing via Binary Package
+插件能力：
 
-Get the binary package of the corresponding OS from [EMQX Download](https://www.emqx.io/downloads) page.
+- MQTT 发布消息转发到 Kafka。
+- 支持多条 MQTT topic filter 规则。
+- 同一条 MQTT 消息命中多条规则时，会 fan-out 到多个 Kafka topic。
+- 支持从 Kafka topic 消费固定 JSON，并发布回 EMQX。
+- Kafka 到 MQTT 的消息 `from` 固定为 `<<"emqx_plugin_kafka">>`。
+- 插件默认不自动加载，需要手动加载或通过 `EMQX_LOADED_PLUGINS` 指定。
 
-- [Single Node Install](https://docs.emqx.io/en/broker/latest/getting-started/install.html)
-- [Multi Node Install](https://docs.emqx.io/en/broker/latest/advanced/cluster.html)
+构建相关改动：
 
+- `lib-extra/plugins` 增加 `emqx_plugin_kafka`。
+- `rebar.config.erl` 支持 `lib-extra/*` 作为 project app dir。
+- `rebar.config.erl` 将测试依赖 `meck` 固定到 OTP 24 可用版本。
+- 插件提供普通插件配置文件 `etc/emqx_plugin_kafka.conf`。
+- 插件提供 cuttlefish schema `priv/emqx_plugin_kafka.schema`，release 会生成：
 
-## Build From Source
+```text
+_build/emqx/rel/emqx/etc/plugins/emqx_plugin_kafka.conf
+_build/emqx/rel/emqx/lib/emqx_plugin_kafka-0.1.0/priv/emqx_plugin_kafka.schema
+```
 
-The *EMQX* broker requires Erlang/OTP R21+ to build since 3.0 release.
+## 环境要求
 
-For 4.3 and later versions.
+deepin 25 上建议直接用官方 builder Docker 镜像编译，避免本机 Erlang/OTP、rebar3、gcc 版本不一致。
+
+需要：
+
+- Docker
+- Git
+- 当前源码目录可写
+
+本文命令默认在仓库根目录执行。
+
+## 编译
+
+普通用户运行 Docker builder 时必须设置 `HOME` 和 `XDG_CACHE_HOME`，否则 rebar3 可能尝试写 `/.cache/rebar3/hex` 并失败。
 
 ```bash
-git clone https://github.com/emqx/emqx.git
-cd emqx
-make
-_build/emqx/rel/emqx/bin console
+mkdir -p .cache/rebar3
+
+docker run --rm -it \
+  -v "$PWD":/emqx \
+  -w /emqx \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/emqx \
+  -e XDG_CACHE_HOME=/emqx/.cache \
+  -e EMQX_EXTRA_PLUGINS=emqx_plugin_kafka \
+  ghcr.io/emqx/emqx-builder/4.4-20:24.3.4.2-1-debian11 \
+  bash -lc 'make emqx'
 ```
 
-For earlier versions, release has to be built from another repo.
+编译成功后 release 位于：
+
+```text
+_build/emqx/rel/emqx
+```
+
+只想快速验证编译时，也可以执行：
 
 ```bash
-git clone https://github.com/emqx/emqx-rel.git
-cd emqx-rel
-make
+docker run --rm \
+  -v "$PWD":/emqx \
+  -w /emqx \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/emqx \
+  -e XDG_CACHE_HOME=/emqx/.cache \
+  -e EMQX_EXTRA_PLUGINS=emqx_plugin_kafka \
+  ghcr.io/emqx/emqx-builder/4.4-20:24.3.4.2-1-debian11 \
+  bash -lc './rebar3 as emqx compile'
+```
+
+## 运行
+
+启动 EMQX：
+
+```bash
 _build/emqx/rel/emqx/bin/emqx console
 ```
 
-## Quick Start
-
-If emqx is built from source, `cd _build/emqx/rel/emqx`.
-Or change to the installation root directory if emqx is installed from a release package.
+另开一个终端加载插件：
 
 ```bash
-# Start emqx
-./bin/emqx start
-
-# Check Status
-./bin/emqx_ctl status
-
-# Stop emqx
-./bin/emqx stop
+_build/emqx/rel/emqx/bin/emqx_ctl plugins load emqx_plugin_kafka
 ```
 
-To view the dashboard after running, use your browser to open: http://localhost:18083
-
-## Test
-
-### To test everything in one go
-
-```
-make eunit ct
-```
-
-### To run subset of the common tests
-
-Examples
+查看插件：
 
 ```bash
-make apps/emqx_bridge_mqtt-ct
+_build/emqx/rel/emqx/bin/emqx_ctl plugins list
 ```
 
-### Dialyzer
-##### To Analyze all the apps
-```
-make dialyzer
-```
+停止：
 
-##### To Analyse specific apps, (list of comma separated apps)
-```
-DIALYZER_ANALYSE_APP=emqx_lwm2m,emqx_auth_jwt,emqx_auth_ldap make dialyzer
+```bash
+_build/emqx/rel/emqx/bin/emqx stop
 ```
 
-## Community
+Dashboard 默认地址：
 
-### FAQ
+```text
+http://127.0.0.1:18083
+```
 
-Visiting [EMQX FAQ](https://docs.emqx.io/en/broker/latest/faq/faq.html) to get help of common problems.
+## 插件配置
 
+release 中的普通配置文件：
 
-### Questions
+```text
+_build/emqx/rel/emqx/etc/plugins/emqx_plugin_kafka.conf
+```
 
-[GitHub Discussions](https://github.com/emqx/emqx/discussions) is where you can ask questions, and share ideas.
+默认内容示例：
 
-### Proposals
+```conf
+kafka.hosts = 127.0.0.1:9092
+kafka.client_id = emqx_plugin_kafka_client
 
-For more organised improvement proposals, you can send pull requests to [EIP](https://github.com/emqx/eip).
+kafka.producer.enabled = true
+kafka.producer.publish_base64 = false
 
-### Plugin development
+kafka.producer.rule.1.mqtt_topic = sensor/+/up
+kafka.producer.rule.1.kafka_topic = kafka_sensor_up
+kafka.producer.rule.2.mqtt_topic = alarm/#
+kafka.producer.rule.2.kafka_topic = kafka_alarm
 
-To develop your own plugins, see [lib-extra/README.md](./lib-extra/README.md)
+kafka.consumer.enabled = false
+kafka.consumer.group_id = emqx_plugin_kafka
+kafka.consumer.topics = mqtt_downlink
+kafka.consumer.begin_offset = earliest
+```
 
+如果需要配置复杂的 `brod_client_config`、`producer_config` 或 `consumer_config`，可以改用 Erlang 配置文件：
 
-## MQTT Specifications
+```text
+_build/emqx/rel/emqx/etc/plugins/emqx_plugin_kafka.config
+```
 
-You can read the mqtt protocol via the following links:
+源码示例在：
 
-[MQTT Version 3.1.1](https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html)
+```text
+lib-extra/emqx_plugin_kafka/etc/emqx_plugin_kafka.config
+```
 
-[MQTT Version 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/cs02/mqtt-v5.0-cs02.html)
+注意：如果 `.config` 存在，EMQX 插件加载逻辑会优先读取 `.config`，不会再用 `.conf + schema` 生成配置。
 
-[MQTT SN](http://mqtt.org/new/wp-content/uploads/2009/06/MQTT-SN_spec_v1.2.pdf)
+## MQTT 到 Kafka
 
-## License
+插件注册 `message.publish` hook。
 
-Apache License 2.0, see [LICENSE](./LICENSE).
+处理逻辑：
+
+1. 跳过 `$SYS/` 系统 topic。
+2. 使用 `emqx_topic:match/2` 匹配配置中的 MQTT topic filter。
+3. 命中所有规则都会写 Kafka，即 fan-out。
+4. Kafka 写入使用 `brod:produce_cb/6`。
+5. Kafka 写入失败只记录日志，不拒绝原 MQTT publish。
+
+Kafka value JSON 示例：
+
+```json
+{
+  "action": "message_publish",
+  "clientid": "client-a",
+  "username": "user-a",
+  "topic": "sensor/a/up",
+  "qos": 1,
+  "payload": "hello",
+  "node": "emqx@127.0.0.1",
+  "timestamp": 1710000000000
+}
+```
+
+如果 `kafka.producer.publish_base64 = true`，`payload` 会先 base64 编码，适合 MQTT payload 不是普通 UTF-8 文本的场景。
+
+## Kafka 到 MQTT
+
+consumer 默认关闭：
+
+```conf
+kafka.consumer.enabled = false
+```
+
+开启后，插件会消费 `kafka.consumer.topics` 中配置的 Kafka topic。
+
+Kafka 消息格式固定为：
+
+```json
+{"topic":"down/a","qos":1,"payload":"hello-from-kafka"}
+```
+
+校验规则：
+
+- `topic` 必须是非空字符串，不能包含 MQTT 通配符 `+` 或 `#`。
+- `qos` 必须存在，且只能是 `0`、`1`、`2`。
+- `payload` 必须是字符串。
+
+合法消息会通过 `emqx_broker:safe_publish/1` 发布进 EMQX。
+
+## 测试
+
+运行插件单元测试：
+
+```bash
+docker run --rm \
+  -v "$PWD":/emqx \
+  -w /emqx \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/emqx \
+  -e XDG_CACHE_HOME=/emqx/.cache \
+  -e EMQX_EXTRA_PLUGINS=emqx_plugin_kafka \
+  ghcr.io/emqx/emqx-builder/4.4-20:24.3.4.2-1-debian11 \
+  bash -lc './rebar3 eunit --dir lib-extra/emqx_plugin_kafka'
+```
+
+当前已验证：
+
+```text
+22 tests, 0 failures
+```
+
+完整 release 验证：
+
+```bash
+docker run --rm \
+  -v "$PWD":/emqx \
+  -w /emqx \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/emqx \
+  -e XDG_CACHE_HOME=/emqx/.cache \
+  -e EMQX_EXTRA_PLUGINS=emqx_plugin_kafka \
+  ghcr.io/emqx/emqx-builder/4.4-20:24.3.4.2-1-debian11 \
+  bash -lc './rebar3 as emqx release -n emqx'
+```
+
+## 打 Docker 镜像
+
+注意：仓库自带的 `deploy/docker/Dockerfile` 里执行的是 `make emqx`，默认不会设置 `EMQX_EXTRA_PLUGINS=emqx_plugin_kafka`。为了避免打出的镜像漏掉插件，推荐用下面的 Dockerfile 片段构建镜像。它和官方 Dockerfile 一样使用 Alpine builder + Alpine runtime，但在 builder 阶段显式启用 Kafka 插件。
+
+```bash
+docker build -t emqx-kafka:4.4.19 -f - . <<'EOF'
+ARG BUILD_FROM=ghcr.io/emqx/emqx-builder/4.4-20:24.3.4.2-1-alpine3.15.1
+ARG RUN_FROM=alpine:3.15.1
+
+FROM ${BUILD_FROM} AS builder
+
+RUN apk add --no-cache \
+    git curl gcc g++ make perl ncurses-dev openssl-dev coreutils \
+    bsd-compat-headers libc-dev libstdc++ bash tzdata jq
+
+COPY . /emqx
+
+ENV EMQX_RELUP=false
+ENV EMQX_EXTRA_PLUGINS=emqx_plugin_kafka
+
+RUN cd /emqx \
+    && rm -rf _build/emqx/lib \
+    && make emqx
+
+FROM alpine:3.15.1
+
+COPY deploy/docker/docker-entrypoint.sh /usr/bin/
+COPY --from=builder /emqx/_build/emqx/rel/emqx /opt/emqx
+
+RUN ln -s /opt/emqx/bin/* /usr/local/bin/ \
+    && apk add --no-cache curl ncurses-libs openssl sudo libstdc++ bash tzdata \
+    && adduser -D -u 1000 emqx \
+    && echo "emqx ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers \
+    && chgrp -Rf emqx /opt/emqx \
+    && chmod -Rf g+w /opt/emqx \
+    && chown -Rf emqx /opt/emqx \
+    && chmod +x /usr/bin/docker-entrypoint.sh
+
+WORKDIR /opt/emqx
+USER emqx
+
+VOLUME ["/opt/emqx/log", "/opt/emqx/data"]
+
+EXPOSE 1883 8081 8083 8084 8883 11883 18083 4369 4370 5369 6369 6370
+
+ENTRYPOINT ["/usr/bin/docker-entrypoint.sh"]
+CMD ["/opt/emqx/bin/emqx", "foreground"]
+EOF
+```
+
+构建完成后可确认镜像里包含插件配置：
+
+```bash
+docker run --rm --entrypoint sh emqx-kafka:4.4.19 -lc \
+  'test -f /opt/emqx/etc/plugins/emqx_plugin_kafka.conf && \
+   test -f /opt/emqx/lib/emqx_plugin_kafka-0.1.0/priv/emqx_plugin_kafka.schema'
+```
+
+运行镜像：
+
+```bash
+docker run -d --name emqx-kafka \
+  -p 1883:1883 \
+  -p 18083:18083 \
+  -e EMQX_LOADED_PLUGINS="emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_plugin_kafka" \
+  emqx-kafka:4.4.19
+```
+
+如果 Kafka 在宿主机上，Linux Docker 里建议加：
+
+```bash
+--add-host=host.docker.internal:host-gateway
+```
+
+并设置：
+
+```bash
+-e EMQX_KAFKA__HOSTS=host.docker.internal:9092
+```
+
+完整示例：
+
+```bash
+docker run -d --name emqx-kafka \
+  --add-host=host.docker.internal:host-gateway \
+  -p 1883:1883 \
+  -p 18083:18083 \
+  -e EMQX_LOADED_PLUGINS="emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_plugin_kafka" \
+  -e EMQX_KAFKA__HOSTS=host.docker.internal:9092 \
+  -e EMQX_KAFKA__PRODUCER__RULE__1__MQTT_TOPIC="sensor/+/up" \
+  -e EMQX_KAFKA__PRODUCER__RULE__1__KAFKA_TOPIC="kafka_sensor_up" \
+  -e EMQX_KAFKA__CONSUMER__ENABLED=true \
+  -e EMQX_KAFKA__CONSUMER__TOPICS=mqtt_downlink \
+  emqx-kafka:4.4.19
+```
+
+查看日志：
+
+```bash
+docker logs -f emqx-kafka
+```
+
+进入容器：
+
+```bash
+docker exec -it emqx-kafka sh
+```
+
+查看插件：
+
+```bash
+docker exec -it emqx-kafka emqx_ctl plugins list
+```
+
+## 手动验收
+
+准备 Kafka topic：
+
+```text
+kafka_sensor_up
+kafka_alarm
+mqtt_downlink
+```
+
+验证 MQTT 到 Kafka：
+
+```bash
+mosquitto_pub -h 127.0.0.1 -p 1883 -i client-a -t sensor/a/up -m hello -q 1
+```
+
+期望 Kafka topic `kafka_sensor_up` 收到类似 JSON：
+
+```json
+{"action":"message_publish","clientid":"client-a","topic":"sensor/a/up","qos":1,"payload":"hello"}
+```
+
+验证 Kafka 到 MQTT：
+
+```bash
+mosquitto_sub -h 127.0.0.1 -p 1883 -t down/a -q 1
+```
+
+向 Kafka topic `mqtt_downlink` 写入：
+
+```json
+{"topic":"down/a","qos":1,"payload":"hello-from-kafka"}
+```
+
+期望 MQTT subscriber 收到：
+
+```text
+hello-from-kafka
+```
+
+## 常见问题
+
+### `Could not write to "/.cache/rebar3/hex"`
+
+Docker builder 中没有正确设置 HOME。使用本文命令里的：
+
+```bash
+-e HOME=/emqx
+-e XDG_CACHE_HOME=/emqx/.cache
+```
+
+### `_build` 或 `.cache` 变成 root 权限
+
+如果曾经用 root 运行过 builder，可以清理后重新编译：
+
+```bash
+docker run --rm \
+  -v "$PWD":/emqx \
+  -w /emqx \
+  --user root \
+  ghcr.io/emqx/emqx-builder/4.4-20:24.3.4.2-1-debian11 \
+  bash -lc 'rm -rf _build .cache rebar.lock rebar.config.rendered'
+```
+
+### 镜像启动后插件没有加载
+
+确认启动容器时包含：
+
+```bash
+-e EMQX_LOADED_PLUGINS="emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_plugin_kafka"
+```
+
+或者进入容器手动执行：
+
+```bash
+emqx_ctl plugins load emqx_plugin_kafka
+```
+
+### Kafka 连接失败
+
+检查：
+
+- `kafka.hosts` 是否从 EMQX 容器内可访问。
+- Kafka advertised listeners 是否对 EMQX 容器可达。
+- producer 规则里的 Kafka topic 是否存在，或 Kafka 是否允许自动创建 topic。
+- consumer 开启时，`kafka.consumer.topics` 是否存在。
+
+## 当前限制
+
+- MQTT 到 Kafka 是 best-effort，Kafka 写失败不会阻塞 MQTT publish。
+- 没有本地磁盘缓存。
+- 没有 Dashboard 配置界面。
+- 没有 Rule Engine action/resource。
+- 不支持运行时热更新配置；修改配置后需要重新加载插件或重启 EMQX。
