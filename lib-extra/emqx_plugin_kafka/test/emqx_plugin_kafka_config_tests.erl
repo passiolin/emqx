@@ -6,7 +6,7 @@ config_test_() ->
     {foreach,
      fun setup/0,
      fun cleanup/1,
-     [fun defaults/0, fun normalizes_binary_rules/0]}.
+     [fun defaults/0, fun normalizes_binary_rules/0, fun normalizes_excluded_topics/0]}.
 
 setup() ->
     [{Key, application:get_env(emqx_plugin_kafka, Key)} || Key <- env_keys()].
@@ -47,7 +47,7 @@ defaults() ->
     ?assertEqual([], maps:get(producer_config, Conf)),
     ?assertEqual([], maps:get(consumer_config, Conf)),
     ?assertMatch(
-        #{enabled := true, publish_base64 := false, rules := []},
+        #{enabled := true, publish_base64 := false, rules := [], excluded_topics := []},
         maps:get(producer, Conf)
     ),
     ?assertMatch(
@@ -72,6 +72,16 @@ normalizes_binary_rules() ->
     ?assertEqual(true, maps:get(publish_base64, Producer)),
     ?assertEqual([{<<"a/+/c">>, <<"kafka_a">>}, {<<"b/#">>, <<"kafka_b">>}],
                  maps:get(rules, Producer)).
+
+normalizes_excluded_topics() ->
+    application:set_env(emqx_plugin_kafka, producer, [
+        {enabled, true},
+        {excluded_topics, ["a/+/c", <<"b/#">>]},
+        {rules, []}
+    ]),
+    Conf = emqx_plugin_kafka_config:get(),
+    Producer = maps:get(producer, Conf),
+    ?assertEqual([<<"a/+/c">>, <<"b/#">>], maps:get(excluded_topics, Producer)).
 
 cached_reads_live_env_when_not_loaded_test() ->
     emqx_plugin_kafka_config:purge(),

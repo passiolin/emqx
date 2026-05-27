@@ -25,14 +25,20 @@ publish_plan(#message{topic = <<"$SYS/", _/binary>>}, _Conf) ->
 publish_plan(_Msg, #{producer := #{enabled := false}}) ->
     skip;
 publish_plan(Msg = #message{topic = Topic}, #{producer := Producer}) ->
-    Rules = maps:get(rules, Producer, []),
-    case matching_kafka_topics(Topic, Rules) of
-        [] ->
+    ExcludedTopics = maps:get(excluded_topics, Producer, []),
+    case excluded_topic(Topic, ExcludedTopics) of
+        true ->
             skip;
-        KafkaTopics ->
-            PublishBase64 = maps:get(publish_base64, Producer, false),
-            {Key, Json} = emqx_plugin_kafka_payload:encode_publish(Msg, PublishBase64),
-            {ok, [{KafkaTopic, Key, Json} || KafkaTopic <- KafkaTopics]}
+        false ->
+            Rules = maps:get(rules, Producer, []),
+            case matching_kafka_topics(Topic, Rules) of
+                [] ->
+                    skip;
+                KafkaTopics ->
+                    PublishBase64 = maps:get(publish_base64, Producer, false),
+                    {Key, Json} = emqx_plugin_kafka_payload:encode_publish(Msg, PublishBase64),
+                    {ok, [{KafkaTopic, Key, Json} || KafkaTopic <- KafkaTopics]}
+            end
     end.
 
 matching_kafka_topics(Topic, Rules) ->
@@ -41,6 +47,14 @@ matching_kafka_topics(Topic, Rules) ->
      || {TopicFilter, KafkaTopic} <- Rules,
         emqx_topic:match(Topic, TopicFilter)
     ].
+
+excluded_topic(Topic, ExcludedTopics) ->
+    lists:any(
+        fun(TopicFilter) ->
+            emqx_topic:match(Topic, TopicFilter)
+        end,
+        ExcludedTopics
+    ).
 
 produce(ClientId, {KafkaTopic, Key, Json}) ->
     case

@@ -99,6 +99,7 @@ docker run -d --name emqx-kafka \
 -e EMQX_KAFKA__CLIENT_ID=emqx_plugin_kafka
 -e EMQX_KAFKA__PRODUCER__ENABLED=true
 -e EMQX_KAFKA__PRODUCER__PUBLISH_BASE64=false
+-e EMQX_KAFKA__PRODUCER__EXCLUDED_TOPICS="internal/#,alarm/debug/#"
 -e EMQX_KAFKA__PRODUCER__RULE__1__MQTT_TOPIC="sensor/+/up"
 -e EMQX_KAFKA__PRODUCER__RULE__1__KAFKA_TOPIC="kafka_sensor_up"
 -e EMQX_KAFKA__CONSUMER__ENABLED=true
@@ -116,6 +117,7 @@ docker run -d --name emqx-kafka \
   -p 18083:18083 \
   -e EMQX_LOADED_PLUGINS="emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_plugin_kafka" \
   -e EMQX_KAFKA__HOSTS=host.docker.internal:9092 \
+  -e EMQX_KAFKA__PRODUCER__EXCLUDED_TOPICS="internal/#,alarm/debug/#" \
   -e EMQX_KAFKA__PRODUCER__RULE__1__MQTT_TOPIC="sensor/+/up" \
   -e EMQX_KAFKA__PRODUCER__RULE__1__KAFKA_TOPIC="kafka_sensor_up" \
   -e EMQX_KAFKA__CONSUMER__ENABLED=true \

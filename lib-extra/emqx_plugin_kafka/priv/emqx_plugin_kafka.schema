@@ -20,6 +20,11 @@
   {datatype, {enum, [true, false]}}
 ]}.
 
+{mapping, "kafka.producer.excluded_topics", "emqx_plugin_kafka.producer", [
+  {default, ""},
+  {datatype, string}
+]}.
+
 {mapping, "kafka.producer.rule.$id.mqtt_topic", "emqx_plugin_kafka.producer", [
   {datatype, string}
 ]}.
@@ -74,6 +79,10 @@ end}.
 {translation, "emqx_plugin_kafka.producer", fun(Conf) ->
   Enabled = cuttlefish:conf_get("kafka.producer.enabled", Conf),
   PublishBase64 = cuttlefish:conf_get("kafka.producer.publish_base64", Conf),
+  ExcludedTopics0 = cuttlefish:conf_get("kafka.producer.excluded_topics", Conf),
+  ExcludedTopics = [unicode:characters_to_binary(string:strip(Topic))
+                    || Topic <- string:tokens(ExcludedTopics0, ","),
+                       string:strip(Topic) =/= ""],
   RuleItems = cuttlefish_variable:filter_by_prefix("kafka.producer.rule", Conf),
   RuleIds = lists:usort([Id || {[_, _, _, Id, _], _} <- RuleItems]),
   Find = fun(Id, Key) ->
@@ -86,6 +95,7 @@ end}.
               (KafkaTopic = Find(Id, "kafka_topic")) =/= undefined],
   [{enabled, Enabled},
    {publish_base64, PublishBase64},
+   {excluded_topics, ExcludedTopics},
    {rules, Rules}]
 end}.
 

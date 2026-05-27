@@ -10,7 +10,9 @@ producer_test_() ->
      [
          fun matching_kafka_topics_returns_all_matches_in_rule_order/0,
          fun publish_plan_skips_sys_topics/0,
+         fun publish_plan_skips_excluded_topics_before_rules/0,
          fun publish_plan_skips_when_no_rule_matches/0,
+         fun publish_plan_returns_encoded_publish_when_excluded_topic_does_not_match/0,
          fun publish_plan_returns_encoded_publish_for_matching_rule/0,
          fun on_message_publish_one_arity_returns_ok_when_disabled/0,
          fun on_message_publish_one_arity_returns_ok_when_no_rules_match/0,
@@ -44,12 +46,30 @@ publish_plan_skips_sys_topics() ->
     ]),
     ?assertEqual(skip, emqx_plugin_kafka_producer:publish_plan(sys_message(), config())).
 
+publish_plan_skips_excluded_topics_before_rules() ->
+    application:set_env(emqx_plugin_kafka, producer, [
+        {enabled, true},
+        {excluded_topics, [<<"sensor/+/up">>]},
+        {rules, [{<<"sensor/#">>, <<"kafka-sensor">>}]}
+    ]),
+    ?assertEqual(skip, emqx_plugin_kafka_producer:publish_plan(message(), config())).
+
 publish_plan_skips_when_no_rule_matches() ->
     application:set_env(emqx_plugin_kafka, producer, [
         {enabled, true},
         {rules, [{<<"alarm/#">>, <<"kafka-alarm">>}]}
     ]),
     ?assertEqual(skip, emqx_plugin_kafka_producer:publish_plan(message(), config())).
+
+publish_plan_returns_encoded_publish_when_excluded_topic_does_not_match() ->
+    application:set_env(emqx_plugin_kafka, producer, [
+        {enabled, true},
+        {excluded_topics, [<<"alarm/#">>]},
+        {rules, [{<<"sensor/#">>, <<"kafka-sensor">>}]}
+    ]),
+    {ok, [{KafkaTopic, _Key, _Json}]} =
+        emqx_plugin_kafka_producer:publish_plan(message(), config()),
+    ?assertEqual(<<"kafka-sensor">>, KafkaTopic).
 
 publish_plan_returns_encoded_publish_for_matching_rule() ->
     application:set_env(emqx_plugin_kafka, producer, [

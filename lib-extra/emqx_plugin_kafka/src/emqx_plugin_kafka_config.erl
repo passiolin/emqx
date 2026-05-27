@@ -39,6 +39,7 @@ producer(Opts) ->
     #{
         enabled => proplists:get_value(enabled, Opts, true),
         publish_base64 => proplists:get_value(publish_base64, Opts, false),
+        excluded_topics => normalize_topic_filters(proplists:get_value(excluded_topics, Opts, [])),
         rules => normalize_rules(proplists:get_value(rules, Opts, []))
     }.
 
@@ -52,6 +53,9 @@ consumer(Opts) ->
 
 normalize_rules(Rules) ->
     [{to_bin(Filter), to_bin(KafkaTopic)} || {Filter, KafkaTopic} <- Rules].
+
+normalize_topic_filters(Filters) ->
+    [to_bin(Filter) || Filter <- Filters].
 
 to_bin(V) when is_binary(V) ->
     V;

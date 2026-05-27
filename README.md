@@ -130,6 +130,7 @@ kafka.client_id = emqx_plugin_kafka_client
 
 kafka.producer.enabled = true
 kafka.producer.publish_base64 = false
+kafka.producer.excluded_topics = internal/#, alarm/debug/#
 
 kafka.producer.rule.1.mqtt_topic = sensor/+/up
 kafka.producer.rule.1.kafka_topic = kafka_sensor_up
@@ -166,10 +167,13 @@ _build/emqx/rel/emqx/etc/plugins/emqx_plugin_kafka.config
 处理逻辑：
 
 1. 跳过 `$SYS/` 系统 topic。
-2. 使用 `emqx_topic:match/2` 匹配配置中的 MQTT topic filter。
-3. 命中所有规则都会写 Kafka，即 fan-out。
-4. Kafka 写入使用 `brod:produce_cb/6`。
-5. Kafka 写入失败只记录日志，不拒绝原 MQTT publish。
+2. 使用 `kafka.producer.excluded_topics` 排除不需要转发到 Kafka 的 MQTT topic。
+3. 使用 `emqx_topic:match/2` 匹配配置中的 MQTT topic filter。
+4. 命中所有规则都会写 Kafka，即 fan-out。
+5. Kafka 写入使用 `brod:produce_cb/6`。
+6. Kafka 写入失败只记录日志，不拒绝原 MQTT publish。
+
+`kafka.producer.excluded_topics` 使用逗号分隔，支持 MQTT topic filter 语法中的 `+` 和 `#`。排除列表优先级高于 producer rules；只要 MQTT topic 命中排除列表，即使同时命中 `kafka.producer.rule.*.mqtt_topic`，也不会写入 Kafka。
 
 Kafka value JSON 示例：
 
@@ -303,6 +307,7 @@ docker run -d --name emqx-kafka \
   -p 18083:18083 \
   -e EMQX_LOADED_PLUGINS="emqx_recon,emqx_retainer,emqx_management,emqx_dashboard,emqx_plugin_kafka" \
   -e EMQX_KAFKA__HOSTS=host.docker.internal:9092 \
+  -e EMQX_KAFKA__PRODUCER__EXCLUDED_TOPICS="internal/#,alarm/debug/#" \
   -e EMQX_KAFKA__PRODUCER__RULE__1__MQTT_TOPIC="sensor/+/up" \
   -e EMQX_KAFKA__PRODUCER__RULE__1__KAFKA_TOPIC="kafka_sensor_up" \
   -e EMQX_KAFKA__CONSUMER__ENABLED=true \
