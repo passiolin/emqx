@@ -8,7 +8,6 @@
     on_client_connected/2,
     on_client_disconnected/3,
     publish_plan/2,
-    connection_event_plan/2,
     connection_event_plan/3,
     connection_event_plan/4,
     matching_kafka_topics/2
