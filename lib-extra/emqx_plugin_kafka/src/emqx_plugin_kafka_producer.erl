@@ -3,7 +3,16 @@
 -include_lib("emqx/include/emqx.hrl").
 -include_lib("emqx/include/logger.hrl").
 
--export([on_message_publish/1, publish_plan/2, matching_kafka_topics/2]).
+-export([
+    on_message_publish/1,
+    on_client_connected/2,
+    on_client_disconnected/3,
+    publish_plan/2,
+    connection_event_plan/2,
+    connection_event_plan/3,
+    connection_event_plan/4,
+    matching_kafka_topics/2
+]).
 
 -ifdef(TEST).
 -export([is_produce_success/1]).
@@ -12,6 +21,28 @@
 on_message_publish(Msg) ->
     Conf = emqx_plugin_kafka_config:cached(),
     case publish_plan(Msg, Conf) of
+        {ok, Plans} ->
+            ClientId = maps:get(client_id, Conf),
+            lists:foreach(fun(Plan) -> produce(ClientId, Plan) end, Plans),
+            ok;
+        skip ->
+            ok
+    end.
+
+on_client_connected(ClientInfo, ConnInfo) ->
+    Conf = emqx_plugin_kafka_config:cached(),
+    case connection_event_plan(ClientInfo, ConnInfo, Conf) of
+        {ok, Plans} ->
+            ClientId = maps:get(client_id, Conf),
+            lists:foreach(fun(Plan) -> produce(ClientId, Plan) end, Plans),
+            ok;
+        skip ->
+            ok
+    end.
+
+on_client_disconnected(ClientInfo, Reason, ConnInfo) ->
+    Conf = emqx_plugin_kafka_config:cached(),
+    case connection_event_plan(ClientInfo, Reason, ConnInfo, Conf) of
         {ok, Plans} ->
             ClientId = maps:get(client_id, Conf),
             lists:foreach(fun(Plan) -> produce(ClientId, Plan) end, Plans),
@@ -40,6 +71,31 @@ publish_plan(Msg = #message{topic = Topic}, #{producer := Producer}) ->
                     {ok, [{KafkaTopic, Key, Json} || KafkaTopic <- KafkaTopics]}
             end
     end.
+
+connection_event_plan(ClientInfo, ConnInfo) ->
+    connection_event_plan(ClientInfo, ConnInfo, emqx_plugin_kafka_config:get()).
+
+connection_event_plan(ClientInfo, Reason, ConnInfo) ->
+    connection_event_plan(ClientInfo, Reason, ConnInfo, emqx_plugin_kafka_config:get()).
+
+connection_event_plan(_ClientInfo, _ConnInfo, #{connection_events := #{enabled := false}}) ->
+    skip;
+connection_event_plan(ClientInfo, ConnInfo, #{connection_events := ConnectionEvents}) ->
+    KafkaTopic = maps:get(topic, ConnectionEvents),
+    {Key, Json} = emqx_plugin_kafka_payload:encode_connection_event(connected, ClientInfo, ConnInfo),
+    {ok, [{KafkaTopic, Key, Json}]}.
+
+connection_event_plan(
+    _ClientInfo, _Reason, _ConnInfo, #{connection_events := #{enabled := false}}
+) ->
+    skip;
+connection_event_plan(ClientInfo, Reason, ConnInfo, #{connection_events := ConnectionEvents}) ->
+    KafkaTopic = maps:get(topic, ConnectionEvents),
+    {Key, Json} =
+        emqx_plugin_kafka_payload:encode_connection_event(
+            disconnected, ClientInfo, ConnInfo, Reason
+        ),
+    {ok, [{KafkaTopic, Key, Json}]}.
 
 matching_kafka_topics(Topic, Rules) ->
     [

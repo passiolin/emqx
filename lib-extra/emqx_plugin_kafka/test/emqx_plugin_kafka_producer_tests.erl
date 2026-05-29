@@ -14,19 +14,26 @@ producer_test_() ->
          fun publish_plan_skips_when_no_rule_matches/0,
          fun publish_plan_returns_encoded_publish_when_excluded_topic_does_not_match/0,
          fun publish_plan_returns_encoded_publish_for_matching_rule/0,
+         fun connection_event_plan_skips_when_disabled/0,
+         fun connected_event_plan_returns_single_topic/0,
+         fun disconnected_event_plan_includes_reason/0,
          fun on_message_publish_one_arity_returns_ok_when_disabled/0,
          fun on_message_publish_one_arity_returns_ok_when_no_rules_match/0,
+         fun on_client_connected_returns_ok_when_disabled/0,
+         fun on_client_disconnected_returns_ok_when_disabled/0,
          fun produce_success_accepts_ok_partition_result/0
      ]}.
 
 setup() ->
     emqx_plugin_kafka_config:purge(),
-    application:get_env(emqx_plugin_kafka, producer).
+    #{
+        producer => application:get_env(emqx_plugin_kafka, producer),
+        connection_events => application:get_env(emqx_plugin_kafka, connection_events)
+    }.
 
-cleanup(undefined) ->
-    application:unset_env(emqx_plugin_kafka, producer);
-cleanup({ok, Producer}) ->
-    application:set_env(emqx_plugin_kafka, producer, Producer).
+cleanup(#{producer := ProducerEnv, connection_events := ConnectionEventsEnv}) ->
+    restore_env(producer, ProducerEnv),
+    restore_env(connection_events, ConnectionEventsEnv).
 
 matching_kafka_topics_returns_all_matches_in_rule_order() ->
     Rules = [
@@ -84,6 +91,40 @@ publish_plan_returns_encoded_publish_for_matching_rule() ->
     ?assertEqual(<<"client-a">>, Key),
     ?assertEqual(<<"sensor/a/up">>, maps:get(<<"topic">>, Payload)).
 
+connection_event_plan_skips_when_disabled() ->
+    application:set_env(emqx_plugin_kafka, connection_events, [{enabled, false}]),
+    ?assertEqual(
+        skip, emqx_plugin_kafka_producer:connection_event_plan(client_info(), conn_info(), config())
+    ).
+
+connected_event_plan_returns_single_topic() ->
+    application:set_env(emqx_plugin_kafka, connection_events, [
+        {enabled, true},
+        {topic, <<"kafka-connection-events">>}
+    ]),
+    {ok, [{KafkaTopic, Key, Json}]} =
+        emqx_plugin_kafka_producer:connection_event_plan(client_info(), conn_info(), config()),
+    Payload = emqx_json:decode(Json, [return_maps]),
+    ?assertEqual(<<"kafka-connection-events">>, KafkaTopic),
+    ?assertEqual(<<"client-a">>, Key),
+    ?assertEqual(<<"connected">>, maps:get(<<"action">>, Payload)),
+    ?assertEqual(<<"client-a">>, maps:get(<<"clientid">>, Payload)).
+
+disconnected_event_plan_includes_reason() ->
+    application:set_env(emqx_plugin_kafka, connection_events, [
+        {enabled, true},
+        {topic, <<"kafka-connection-events">>}
+    ]),
+    {ok, [{KafkaTopic, Key, Json}]} =
+        emqx_plugin_kafka_producer:connection_event_plan(
+            client_info(), normal, disconnected_conn_info(), config()
+        ),
+    Payload = emqx_json:decode(Json, [return_maps]),
+    ?assertEqual(<<"kafka-connection-events">>, KafkaTopic),
+    ?assertEqual(<<"client-a">>, Key),
+    ?assertEqual(<<"disconnected">>, maps:get(<<"action">>, Payload)),
+    ?assertEqual(<<"normal">>, maps:get(<<"reason">>, Payload)).
+
 on_message_publish_one_arity_returns_ok_when_disabled() ->
     application:set_env(emqx_plugin_kafka, producer, [{enabled, false}]),
     ?assertEqual({module, emqx_plugin_kafka_producer}, code:ensure_loaded(emqx_plugin_kafka_producer)),
@@ -96,6 +137,19 @@ on_message_publish_one_arity_returns_ok_when_no_rules_match() ->
         {rules, [{<<"alarm/#">>, <<"kafka-alarm">>}]}
     ]),
     ?assertEqual(ok, emqx_plugin_kafka_producer:on_message_publish(message())).
+
+on_client_connected_returns_ok_when_disabled() ->
+    application:set_env(emqx_plugin_kafka, connection_events, [{enabled, false}]),
+    ?assertEqual(ok, emqx_plugin_kafka_producer:on_client_connected(client_info(), conn_info())).
+
+on_client_disconnected_returns_ok_when_disabled() ->
+    application:set_env(emqx_plugin_kafka, connection_events, [{enabled, false}]),
+    ?assertEqual(
+        ok,
+        emqx_plugin_kafka_producer:on_client_disconnected(
+            client_info(), normal, disconnected_conn_info()
+        )
+    ).
 
 produce_success_accepts_ok_partition_result() ->
     ?assert(emqx_plugin_kafka_producer:is_produce_success(ok)),
@@ -119,3 +173,30 @@ message() ->
 
 sys_message() ->
     (message())#message{topic = <<"$SYS/brokers">>}.
+
+client_info() ->
+    #{
+        clientid => <<"client-a">>,
+        username => <<"user-a">>
+    }.
+
+conn_info() ->
+    #{
+        peername => {{127, 0, 0, 1}, 1883},
+        proto_name => <<"MQTT">>,
+        proto_ver => 5,
+        connected_at => 123456789
+    }.
+
+disconnected_conn_info() ->
+    #{
+        peername => {{127, 0, 0, 1}, 1883},
+        proto_name => <<"MQTT">>,
+        proto_ver => 5,
+        disconnected_at => 123456999
+    }.
+
+restore_env(Key, undefined) ->
+    application:unset_env(emqx_plugin_kafka, Key);
+restore_env(Key, {ok, Value}) ->
+    application:set_env(emqx_plugin_kafka, Key, Value).
