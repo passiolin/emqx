@@ -5,7 +5,13 @@
 -include_lib("emqx/include/logger.hrl").
 
 -export([start_link/0]).
--export([call_with_timeout/2, client_config/1, ensure_dependency_paths/0, start_client_call/2]).
+-export([
+    call_with_timeout/2,
+    client_config/1,
+    ensure_dependency_paths/0,
+    producer_topics/1,
+    start_client_call/2
+]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -define(START_TIMEOUT, 5000).
@@ -172,12 +178,24 @@ start_runtime_children(ClientId, Conf) ->
 
 start_producers(
     ClientId,
-    #{producer := #{enabled := true, rules := Rules}, producer_config := ProducerConfig}
+    #{producer := #{enabled := true}, producer_config := ProducerConfig} = Conf
 ) ->
-    KafkaTopics = lists:usort([KafkaTopic || {_Filter, KafkaTopic} <- Rules]),
-    start_producer_topics(ClientId, KafkaTopics, ProducerConfig);
+    start_producer_topics(ClientId, producer_topics(Conf), ProducerConfig);
 start_producers(_ClientId, _Conf) ->
     ok.
+
+producer_topics(Conf) ->
+    lists:usort(producer_rule_topics(Conf) ++ connection_event_topics(Conf)).
+
+producer_rule_topics(#{producer := #{rules := Rules}}) ->
+    [KafkaTopic || {_Filter, KafkaTopic} <- Rules];
+producer_rule_topics(_Conf) ->
+    [].
+
+connection_event_topics(#{connection_events := #{enabled := true, topic := KafkaTopic}}) ->
+    [KafkaTopic];
+connection_event_topics(_Conf) ->
+    [].
 
 start_producer_topics(_ClientId, [], _ProducerConfig) ->
     ok;

@@ -75,3 +75,40 @@ start_client_call_times_out_test() ->
             10
         )
     ).
+
+producer_topics_include_connection_events_topic_test() ->
+    Conf = #{
+        producer => #{
+            enabled => true,
+            rules => [
+                {<<"sensor/+/up">>, <<"kafka_sensor_up">>},
+                {<<"alarm/#">>, <<"kafka_alarm">>}
+            ]
+        },
+        connection_events => #{
+            enabled => true,
+            topic => <<"mqtt_connection_events">>
+        }
+    },
+    ?assertEqual(
+        [<<"kafka_alarm">>, <<"kafka_sensor_up">>, <<"mqtt_connection_events">>],
+        emqx_plugin_kafka_runtime:producer_topics(Conf)
+    ).
+
+producer_topics_skip_disabled_connection_events_test() ->
+    Conf = #{
+        producer => #{
+            enabled => true,
+            rules => [
+                {<<"sensor/+/up">>, <<"kafka_sensor_up">>}
+            ]
+        },
+        connection_events => #{
+            enabled => false,
+            topic => <<"mqtt_connection_events">>
+        }
+    },
+    ?assertEqual(
+        [<<"kafka_sensor_up">>],
+        emqx_plugin_kafka_runtime:producer_topics(Conf)
+    ).
