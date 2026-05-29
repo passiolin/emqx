@@ -104,6 +104,35 @@ encode_connection_event_uses_empty_key_without_clientid_test() ->
     ?assertEqual(<<"connected">>, maps:get(<<"action">>, Payload)),
     ?assertNot(maps:is_key(<<"clientid">>, Payload)).
 
+encode_connection_event_uses_empty_key_for_undefined_clientid_test() ->
+    ClientInfo = #{
+        clientid => undefined,
+        username => <<"user-a">>
+    },
+    ConnInfo = #{
+        connected_at => 123456789,
+        peername => {{10, 0, 0, 8}, 53211},
+        proto_name => <<"MQTT">>,
+        proto_ver => 5
+    },
+    {Key, Json} = emqx_plugin_kafka_payload:encode_connection_event(connected, ClientInfo, ConnInfo),
+    Payload = emqx_json:decode(Json, [return_maps]),
+    ?assertEqual(<<>>, Key),
+    ?assertEqual(<<"connected">>, maps:get(<<"action">>, Payload)),
+    ?assertNot(maps:is_key(<<"clientid">>, Payload)).
+
+encode_connection_event_formats_ipv6_peername_test() ->
+    ClientInfo = #{
+        clientid => <<"client-a">>
+    },
+    ConnInfo = #{
+        connected_at => 123456789,
+        peername => {{16#2001, 16#db8, 0, 0, 0, 0, 0, 1}, 1883}
+    },
+    {_Key, Json} = emqx_plugin_kafka_payload:encode_connection_event(connected, ClientInfo, ConnInfo),
+    Payload = emqx_json:decode(Json, [return_maps]),
+    ?assertEqual(<<"[2001:db8::1]:1883">>, maps:get(<<"peername">>, Payload)).
+
 decode_consumer_valid_payload_test() ->
     Json = <<"{\"topic\":\"down/a\",\"qos\":1,\"payload\":\"hello\"}">>,
     {ok, Msg} = emqx_plugin_kafka_payload:decode_consumer(Json),

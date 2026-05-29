@@ -31,7 +31,7 @@ encode_connection_event(disconnected, ClientInfo, ConnInfo) ->
     encode_connection_event(disconnected, ClientInfo, ConnInfo, undefined).
 
 encode_connection_event(Action, ClientInfo, ConnInfo, Reason) ->
-    Key = maps:get(clientid, ClientInfo, <<>>),
+    Key = clientid_key(ClientInfo),
     Payload0 = #{
         action => action_bin(Action),
         node => atom_to_binary(node(), utf8),
@@ -97,10 +97,18 @@ maybe_put_username(Headers, Payload) ->
 
 maybe_put(Field, Source, Payload) ->
     case maps:find(Field, Source) of
+        {ok, undefined} ->
+            Payload;
         {ok, Value} ->
             Payload#{Field => Value};
         error ->
             Payload
+    end.
+
+clientid_key(ClientInfo) ->
+    case maps:get(clientid, ClientInfo, <<>>) of
+        undefined -> <<>>;
+        ClientId -> ClientId
     end.
 
 maybe_put_reason(disconnected, Reason, Payload) when Reason =/= undefined ->
@@ -118,8 +126,10 @@ event_timestamp_key(connected) ->
 event_timestamp_key(disconnected) ->
     disconnected_at.
 
-format_peername({IP, Port}) ->
+format_peername({IP, Port}) when tuple_size(IP) =:= 4 ->
     iolist_to_binary([inet:ntoa(IP), $:, integer_to_list(Port)]);
+format_peername({IP, Port}) ->
+    iolist_to_binary([$[, inet:ntoa(IP), $], $:, integer_to_list(Port)]);
 format_peername(undefined) ->
     undefined.
 
