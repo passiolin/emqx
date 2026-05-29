@@ -13,11 +13,12 @@ get() ->
         producer_config => application:get_env(?APP, producer_config, []),
         consumer_config => application:get_env(?APP, consumer_config, []),
         producer => producer(application:get_env(?APP, producer, [])),
-        consumer => consumer(application:get_env(?APP, consumer, []))
+        consumer => consumer(application:get_env(?APP, consumer, [])),
+        connection_events => connection_events(application:get_env(?APP, connection_events, []))
     }.
 
 %% Cache the computed config in persistent_term so the message.publish hot path
-%% does not rebuild it (7 app env reads + rule normalization) on every message.
+%% does not rebuild it (8 app env reads + rule normalization) on every message.
 %% Plugin config is static between (un)load, so the cache is refreshed on app
 %% start (reload/0) and cleared on app stop (purge/0).
 reload() ->
@@ -49,6 +50,12 @@ consumer(Opts) ->
         group_id => to_bin(proplists:get_value(group_id, Opts, <<"emqx_plugin_kafka">>)),
         topics => [to_bin(T) || T <- proplists:get_value(topics, Opts, [])],
         begin_offset => proplists:get_value(begin_offset, Opts, earliest)
+    }.
+
+connection_events(Opts) ->
+    #{
+        enabled => proplists:get_value(enabled, Opts, false),
+        topic => to_bin(proplists:get_value(topic, Opts, <<"mqtt_connection_events">>))
     }.
 
 normalize_rules(Rules) ->

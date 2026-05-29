@@ -6,7 +6,11 @@ config_test_() ->
     {foreach,
      fun setup/0,
      fun cleanup/1,
-     [fun defaults/0, fun normalizes_binary_rules/0, fun normalizes_excluded_topics/0]}.
+     [fun defaults/0,
+      fun normalizes_binary_rules/0,
+      fun normalizes_excluded_topics/0,
+      fun connection_events_defaults/0,
+      fun connection_events_normalizes_topic/0]}.
 
 setup() ->
     [{Key, application:get_env(emqx_plugin_kafka, Key)} || Key <- env_keys()].
@@ -29,7 +33,8 @@ env_keys() ->
         client_id,
         brod_client_config,
         producer_config,
-        consumer_config
+        consumer_config,
+        connection_events
     ].
 
 defaults() ->
@@ -40,6 +45,7 @@ defaults() ->
     application:unset_env(emqx_plugin_kafka, brod_client_config),
     application:unset_env(emqx_plugin_kafka, producer_config),
     application:unset_env(emqx_plugin_kafka, consumer_config),
+    application:unset_env(emqx_plugin_kafka, connection_events),
     Conf = emqx_plugin_kafka_config:get(),
     ?assertEqual([{"127.0.0.1", 9092}], maps:get(kafka_hosts, Conf)),
     ?assertEqual(emqx_plugin_kafka_client, maps:get(client_id, Conf)),
@@ -56,6 +62,10 @@ defaults() ->
           topics := [],
           begin_offset := earliest},
         maps:get(consumer, Conf)
+    ),
+    ?assertMatch(
+        #{enabled := false, topic := <<"mqtt_connection_events">>},
+        maps:get(connection_events, Conf)
     ).
 
 normalizes_binary_rules() ->
@@ -82,6 +92,25 @@ normalizes_excluded_topics() ->
     Conf = emqx_plugin_kafka_config:get(),
     Producer = maps:get(producer, Conf),
     ?assertEqual([<<"a/+/c">>, <<"b/#">>], maps:get(excluded_topics, Producer)).
+
+connection_events_defaults() ->
+    application:unset_env(emqx_plugin_kafka, connection_events),
+    Conf = emqx_plugin_kafka_config:get(),
+    ?assertEqual(
+        #{enabled => false, topic => <<"mqtt_connection_events">>},
+        maps:get(connection_events, Conf)
+    ).
+
+connection_events_normalizes_topic() ->
+    application:set_env(emqx_plugin_kafka, connection_events, [
+        {enabled, true},
+        {topic, "mqtt_connection_events_custom"}
+    ]),
+    Conf = emqx_plugin_kafka_config:get(),
+    ?assertEqual(
+        #{enabled => true, topic => <<"mqtt_connection_events_custom">>},
+        maps:get(connection_events, Conf)
+    ).
 
 cached_reads_live_env_when_not_loaded_test() ->
     emqx_plugin_kafka_config:purge(),

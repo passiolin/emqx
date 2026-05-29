@@ -53,6 +53,16 @@
   {datatype, {enum, [earliest, latest]}}
 ]}.
 
+{mapping, "kafka.connection_events.enabled", "emqx_plugin_kafka.connection_events", [
+  {default, false},
+  {datatype, {enum, [true, false]}}
+]}.
+
+{mapping, "kafka.connection_events.topic", "emqx_plugin_kafka.connection_events", [
+  {default, "mqtt_connection_events"},
+  {datatype, string}
+]}.
+
 {translation, "emqx_plugin_kafka.kafka_hosts", fun(Conf) ->
   Hosts0 = cuttlefish:conf_get("kafka.hosts", Conf),
   Hosts = [string:strip(Host) || Host <- string:tokens(Hosts0, ",")],
@@ -107,4 +117,9 @@ end}.
    {group_id, unicode:characters_to_binary(cuttlefish:conf_get("kafka.consumer.group_id", Conf))},
    {topics, Topics},
    {begin_offset, cuttlefish:conf_get("kafka.consumer.begin_offset", Conf)}]
+end}.
+
+{translation, "emqx_plugin_kafka.connection_events", fun(Conf) ->
+  [{enabled, cuttlefish:conf_get("kafka.connection_events.enabled", Conf)},
+   {topic, unicode:characters_to_binary(cuttlefish:conf_get("kafka.connection_events.topic", Conf))}]
 end}.
