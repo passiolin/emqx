@@ -71,12 +71,6 @@ publish_plan(Msg = #message{topic = Topic}, #{producer := Producer}) ->
             end
     end.
 
-connection_event_plan(ClientInfo, ConnInfo) ->
-    connection_event_plan(ClientInfo, ConnInfo, emqx_plugin_kafka_config:get()).
-
-connection_event_plan(ClientInfo, Reason, ConnInfo) ->
-    connection_event_plan(ClientInfo, Reason, ConnInfo, emqx_plugin_kafka_config:get()).
-
 connection_event_plan(_ClientInfo, _ConnInfo, #{connection_events := #{enabled := false}}) ->
     skip;
 connection_event_plan(ClientInfo, ConnInfo, #{connection_events := ConnectionEvents}) ->

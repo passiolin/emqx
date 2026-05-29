@@ -13,6 +13,7 @@ lib-extra/emqx_plugin_kafka
 插件能力：
 
 - MQTT 发布消息转发到 Kafka。
+- MQTT 客户端 `connect` / `disconnect` 生命周期事件转发到独立 Kafka topic。
 - 支持多条 MQTT topic filter 规则。
 - 同一条 MQTT 消息命中多条规则时，会 fan-out 到多个 Kafka topic。
 - 支持从 Kafka topic 消费固定 JSON，并发布回 EMQX。
@@ -141,6 +142,9 @@ kafka.consumer.enabled = false
 kafka.consumer.group_id = emqx_plugin_kafka
 kafka.consumer.topics = mqtt_downlink
 kafka.consumer.begin_offset = earliest
+
+kafka.connection_events.enabled = false
+kafka.connection_events.topic = mqtt_connection_events
 ```
 
 如果需要配置复杂的 `brod_client_config`、`producer_config` 或 `consumer_config`，可以手动创建 Erlang 配置文件：
@@ -192,6 +196,68 @@ Kafka value JSON 示例：
 
 如果 `kafka.producer.publish_base64 = true`，`payload` 会先 base64 编码，适合 MQTT payload 不是普通 UTF-8 文本的场景。
 
+## MQTT 客户端连接事件到 Kafka
+
+连接事件默认关闭：
+
+```conf
+kafka.connection_events.enabled = false
+```
+
+开启后，插件会额外挂载：
+
+- `client.connected`
+- `client.disconnected`
+
+两类事件都会写入同一个 Kafka topic：
+
+```conf
+kafka.connection_events.topic = mqtt_connection_events
+```
+
+Kafka value JSON 中通过 `action` 区分事件类型，只使用两个值：
+
+- `connected`
+- `disconnected`
+
+`connected` 示例：
+
+```json
+{
+  "action": "connected",
+  "clientid": "client-a",
+  "username": "user-a",
+  "node": "emqx@127.0.0.1",
+  "proto_name": "MQTT",
+  "proto_ver": 5,
+  "peername": "10.0.0.8:53211",
+  "connected_at": 1716970000000
+}
+```
+
+`disconnected` 示例：
+
+```json
+{
+  "action": "disconnected",
+  "clientid": "client-a",
+  "username": "user-a",
+  "node": "emqx@127.0.0.1",
+  "proto_name": "MQTT",
+  "proto_ver": 5,
+  "peername": "10.0.0.8:53211",
+  "reason": "normal",
+  "disconnected_at": 1716970005000
+}
+```
+
+说明：
+
+- Kafka message key 默认使用 MQTT `clientid`。
+- 如果 `clientid` 缺失或为 `undefined`，Kafka key 会退化为空 binary，JSON 中也不会带 `clientid` 字段。
+- IPv6 `peername` 会编码成带方括号的形式，例如 `[2001:db8::1]:1883`。
+- Kafka 写入失败只记录日志，不阻塞客户端连接或断开流程。
+
 ## Kafka 到 MQTT
 
 consumer 默认关闭：
@@ -232,10 +298,18 @@ docker run --rm \
   bash -lc './rebar3 eunit --dir lib-extra/emqx_plugin_kafka'
 ```
 
-当前已验证：
+当前测试覆盖包括：
+
+- 配置默认值和规范化。
+- MQTT publish payload 编码。
+- connect / disconnect 事件 payload 编码。
+- producer topic 匹配与 connection event plan。
+- 插件 hook 注册和注销。
+
+如果本机直接执行 `make` / `rebar3`，需要先具备 `erl` 和 `escript`；否则会在进入测试前报：
 
 ```text
-22 tests, 0 failures
+/usr/bin/env: ‘escript’: No such file or directory
 ```
 
 完整 release 验证：
@@ -341,6 +415,7 @@ docker exec -it emqx-kafka emqx_ctl plugins list
 kafka_sensor_up
 kafka_alarm
 mqtt_downlink
+mqtt_connection_events
 ```
 
 验证 MQTT 到 Kafka：
@@ -371,6 +446,23 @@ mosquitto_sub -h 127.0.0.1 -p 1883 -t down/a -q 1
 
 ```text
 hello-from-kafka
+```
+
+验证连接事件到 Kafka：
+
+1. 在 Kafka 中消费 `mqtt_connection_events`
+2. 建立一个 MQTT 连接，再主动断开
+
+期望 Kafka 收到类似 JSON：
+
+```json
+{"action":"connected","clientid":"client-a","proto_name":"MQTT","proto_ver":5,"peername":"10.0.0.8:53211","connected_at":1716970000000}
+```
+
+以及：
+
+```json
+{"action":"disconnected","clientid":"client-a","proto_name":"MQTT","proto_ver":5,"peername":"10.0.0.8:53211","reason":"normal","disconnected_at":1716970005000}
 ```
 
 ## 常见问题
