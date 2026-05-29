@@ -2,7 +2,12 @@
 
 -include_lib("emqx/include/emqx.hrl").
 
--export([encode_publish/2, decode_consumer/1]).
+-export([
+    encode_publish/2,
+    encode_connection_event/3,
+    encode_connection_event/4,
+    decode_consumer/1
+]).
 
 -define(FROM, <<"emqx_plugin_kafka">>).
 
@@ -19,6 +24,26 @@ encode_publish(Msg = #message{}, PublishBase64) ->
     },
     Json = emqx_json:encode(maybe_put_username(Msg#message.headers, Payload)),
     {From, Json}.
+
+encode_connection_event(connected, ClientInfo, ConnInfo) ->
+    encode_connection_event(connected, ClientInfo, ConnInfo, undefined);
+encode_connection_event(disconnected, ClientInfo, ConnInfo) ->
+    encode_connection_event(disconnected, ClientInfo, ConnInfo, undefined).
+
+encode_connection_event(Action, ClientInfo, ConnInfo, Reason) ->
+    Key = maps:get(clientid, ClientInfo, <<>>),
+    Payload0 = #{
+        action => action_bin(Action),
+        node => atom_to_binary(node(), utf8),
+        peername => format_peername(maps:get(peername, ConnInfo, undefined)),
+        event_timestamp_key(Action) => maps:get(event_timestamp_key(Action), ConnInfo)
+    },
+    Payload1 = maybe_put(clientid, ClientInfo, Payload0),
+    Payload2 = maybe_put(username, ClientInfo, Payload1),
+    Payload3 = maybe_put(proto_name, ClientInfo, Payload2),
+    Payload4 = maybe_put(proto_ver, ClientInfo, Payload3),
+    Payload5 = maybe_put_reason(Action, Reason, Payload4),
+    {Key, emqx_json:encode(maps:filter(fun(_K, V) -> V =/= undefined end, Payload5))}.
 
 decode_consumer(Json) ->
     case emqx_json:safe_decode(Json, [return_maps]) of
@@ -69,6 +94,39 @@ maybe_put_username(Headers, Payload) ->
         error ->
             Payload
     end.
+
+maybe_put(Field, Source, Payload) ->
+    case maps:find(Field, Source) of
+        {ok, Value} ->
+            Payload#{Field => Value};
+        error ->
+            Payload
+    end.
+
+maybe_put_reason(disconnected, Reason, Payload) when Reason =/= undefined ->
+    Payload#{reason => reason_bin(Reason)};
+maybe_put_reason(_, _, Payload) ->
+    Payload.
+
+action_bin(connected) ->
+    <<"connected">>;
+action_bin(disconnected) ->
+    <<"disconnected">>.
+
+event_timestamp_key(connected) ->
+    connected_at;
+event_timestamp_key(disconnected) ->
+    disconnected_at.
+
+format_peername({IP, Port}) ->
+    iolist_to_binary([inet:ntoa(IP), $:, integer_to_list(Port)]);
+format_peername(undefined) ->
+    undefined.
+
+reason_bin(Reason) when is_atom(Reason) ->
+    atom_to_binary(Reason, utf8);
+reason_bin(Reason) when is_binary(Reason) ->
+    Reason.
 
 validate_topic(Topic) when is_binary(Topic) ->
     case valid_topic(Topic) of

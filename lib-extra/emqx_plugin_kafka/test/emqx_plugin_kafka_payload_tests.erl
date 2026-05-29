@@ -36,6 +36,74 @@ encode_publish_coerces_atom_from_to_binary_test() ->
     Payload = emqx_json:decode(Json, [return_maps]),
     ?assertEqual(<<"sys_internal">>, maps:get(<<"clientid">>, Payload)).
 
+encode_connected_event_test() ->
+    ClientInfo = #{
+        clientid => <<"client-a">>,
+        username => <<"user-a">>,
+        proto_name => <<"MQTT">>,
+        proto_ver => 5
+    },
+    ConnInfo = #{
+        connected_at => 123456789,
+        peername => {{10, 0, 0, 8}, 53211}
+    },
+    {Key, Json} = emqx_plugin_kafka_payload:encode_connection_event(connected, ClientInfo, ConnInfo),
+    Payload = emqx_json:decode(Json, [return_maps]),
+    ?assertEqual(<<"client-a">>, Key),
+    ?assertEqual(<<"connected">>, maps:get(<<"action">>, Payload)),
+    ?assertEqual(atom_to_binary(node(), utf8), maps:get(<<"node">>, Payload)),
+    ?assertEqual(<<"client-a">>, maps:get(<<"clientid">>, Payload)),
+    ?assertEqual(<<"user-a">>, maps:get(<<"username">>, Payload)),
+    ?assertEqual(<<"MQTT">>, maps:get(<<"proto_name">>, Payload)),
+    ?assertEqual(5, maps:get(<<"proto_ver">>, Payload)),
+    ?assertEqual(<<"10.0.0.8:53211">>, maps:get(<<"peername">>, Payload)),
+    ?assertEqual(123456789, maps:get(<<"connected_at">>, Payload)).
+
+encode_disconnected_event_test() ->
+    ClientInfo = #{
+        clientid => <<"client-a">>,
+        username => <<"user-a">>,
+        proto_name => <<"MQTT">>,
+        proto_ver => 5
+    },
+    ConnInfo = #{
+        disconnected_at => 123456790,
+        peername => {{10, 0, 0, 8}, 53211}
+    },
+    {Key, Json} = emqx_plugin_kafka_payload:encode_connection_event(
+        disconnected,
+        ClientInfo,
+        ConnInfo,
+        takenover
+    ),
+    Payload = emqx_json:decode(Json, [return_maps]),
+    ?assertEqual(<<"client-a">>, Key),
+    ?assertEqual(<<"disconnected">>, maps:get(<<"action">>, Payload)),
+    ?assertEqual(atom_to_binary(node(), utf8), maps:get(<<"node">>, Payload)),
+    ?assertEqual(<<"client-a">>, maps:get(<<"clientid">>, Payload)),
+    ?assertEqual(<<"user-a">>, maps:get(<<"username">>, Payload)),
+    ?assertEqual(<<"MQTT">>, maps:get(<<"proto_name">>, Payload)),
+    ?assertEqual(5, maps:get(<<"proto_ver">>, Payload)),
+    ?assertEqual(<<"10.0.0.8:53211">>, maps:get(<<"peername">>, Payload)),
+    ?assertEqual(123456790, maps:get(<<"disconnected_at">>, Payload)),
+    ?assertEqual(<<"takenover">>, maps:get(<<"reason">>, Payload)).
+
+encode_connection_event_uses_empty_key_without_clientid_test() ->
+    ClientInfo = #{
+        username => <<"user-a">>,
+        proto_name => <<"MQTT">>,
+        proto_ver => 5
+    },
+    ConnInfo = #{
+        connected_at => 123456789,
+        peername => {{10, 0, 0, 8}, 53211}
+    },
+    {Key, Json} = emqx_plugin_kafka_payload:encode_connection_event(connected, ClientInfo, ConnInfo),
+    Payload = emqx_json:decode(Json, [return_maps]),
+    ?assertEqual(<<>>, Key),
+    ?assertEqual(<<"connected">>, maps:get(<<"action">>, Payload)),
+    ?assertNot(maps:is_key(<<"clientid">>, Payload)).
+
 decode_consumer_valid_payload_test() ->
     Json = <<"{\"topic\":\"down/a\",\"qos\":1,\"payload\":\"hello\"}">>,
     {ok, Msg} = emqx_plugin_kafka_payload:decode_consumer(Json),
