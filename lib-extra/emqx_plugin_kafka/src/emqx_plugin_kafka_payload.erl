@@ -40,8 +40,8 @@ encode_connection_event(Action, ClientInfo, ConnInfo, Reason) ->
     },
     Payload1 = maybe_put(clientid, ClientInfo, Payload0),
     Payload2 = maybe_put(username, ClientInfo, Payload1),
-    Payload3 = maybe_put(proto_name, ClientInfo, Payload2),
-    Payload4 = maybe_put(proto_ver, ClientInfo, Payload3),
+    Payload3 = maybe_put(proto_name, ConnInfo, Payload2),
+    Payload4 = maybe_put(proto_ver, ConnInfo, Payload3),
     Payload5 = maybe_put_reason(Action, Reason, Payload4),
     {Key, emqx_json:encode(maps:filter(fun(_K, V) -> V =/= undefined end, Payload5))}.
 
@@ -126,7 +126,9 @@ format_peername(undefined) ->
 reason_bin(Reason) when is_atom(Reason) ->
     atom_to_binary(Reason, utf8);
 reason_bin(Reason) when is_binary(Reason) ->
-    Reason.
+    Reason;
+reason_bin(Reason) ->
+    iolist_to_binary(io_lib:format("~0p", [Reason])).
 
 validate_topic(Topic) when is_binary(Topic) ->
     case valid_topic(Topic) of

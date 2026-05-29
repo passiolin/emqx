@@ -39,13 +39,13 @@ encode_publish_coerces_atom_from_to_binary_test() ->
 encode_connected_event_test() ->
     ClientInfo = #{
         clientid => <<"client-a">>,
-        username => <<"user-a">>,
-        proto_name => <<"MQTT">>,
-        proto_ver => 5
+        username => <<"user-a">>
     },
     ConnInfo = #{
         connected_at => 123456789,
-        peername => {{10, 0, 0, 8}, 53211}
+        peername => {{10, 0, 0, 8}, 53211},
+        proto_name => <<"MQTT">>,
+        proto_ver => 5
     },
     {Key, Json} = emqx_plugin_kafka_payload:encode_connection_event(connected, ClientInfo, ConnInfo),
     Payload = emqx_json:decode(Json, [return_maps]),
@@ -62,19 +62,19 @@ encode_connected_event_test() ->
 encode_disconnected_event_test() ->
     ClientInfo = #{
         clientid => <<"client-a">>,
-        username => <<"user-a">>,
-        proto_name => <<"MQTT">>,
-        proto_ver => 5
+        username => <<"user-a">>
     },
     ConnInfo = #{
         disconnected_at => 123456790,
-        peername => {{10, 0, 0, 8}, 53211}
+        peername => {{10, 0, 0, 8}, 53211},
+        proto_name => <<"MQTT">>,
+        proto_ver => 5
     },
     {Key, Json} = emqx_plugin_kafka_payload:encode_connection_event(
         disconnected,
         ClientInfo,
         ConnInfo,
-        takenover
+        {shutdown, takenover}
     ),
     Payload = emqx_json:decode(Json, [return_maps]),
     ?assertEqual(<<"client-a">>, Key),
@@ -86,17 +86,17 @@ encode_disconnected_event_test() ->
     ?assertEqual(5, maps:get(<<"proto_ver">>, Payload)),
     ?assertEqual(<<"10.0.0.8:53211">>, maps:get(<<"peername">>, Payload)),
     ?assertEqual(123456790, maps:get(<<"disconnected_at">>, Payload)),
-    ?assertEqual(<<"takenover">>, maps:get(<<"reason">>, Payload)).
+    ?assertEqual(<<"{shutdown,takenover}">>, maps:get(<<"reason">>, Payload)).
 
 encode_connection_event_uses_empty_key_without_clientid_test() ->
     ClientInfo = #{
-        username => <<"user-a">>,
-        proto_name => <<"MQTT">>,
-        proto_ver => 5
+        username => <<"user-a">>
     },
     ConnInfo = #{
         connected_at => 123456789,
-        peername => {{10, 0, 0, 8}, 53211}
+        peername => {{10, 0, 0, 8}, 53211},
+        proto_name => <<"MQTT">>,
+        proto_ver => 5
     },
     {Key, Json} = emqx_plugin_kafka_payload:encode_connection_event(connected, ClientInfo, ConnInfo),
     Payload = emqx_json:decode(Json, [return_maps]),
