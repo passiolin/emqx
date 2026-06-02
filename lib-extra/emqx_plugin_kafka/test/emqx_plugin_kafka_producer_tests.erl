@@ -17,8 +17,8 @@ producer_test_() ->
          fun connection_event_plan_skips_when_disabled/0,
          fun connected_event_plan_returns_single_topic/0,
          fun disconnected_event_plan_includes_reason/0,
-         fun on_message_publish_one_arity_returns_ok_when_disabled/0,
-         fun on_message_publish_one_arity_returns_ok_when_no_rules_match/0,
+         fun on_message_publish_one_arity_returns_message_when_disabled/0,
+         fun on_message_publish_one_arity_returns_message_when_no_rules_match/0,
          fun on_client_connected_returns_ok_when_disabled/0,
          fun on_client_disconnected_returns_ok_when_disabled/0,
          fun produce_success_accepts_ok_partition_result/0
@@ -125,18 +125,20 @@ disconnected_event_plan_includes_reason() ->
     ?assertEqual(<<"disconnected">>, maps:get(<<"action">>, Payload)),
     ?assertEqual(<<"normal">>, maps:get(<<"reason">>, Payload)).
 
-on_message_publish_one_arity_returns_ok_when_disabled() ->
+on_message_publish_one_arity_returns_message_when_disabled() ->
     application:set_env(emqx_plugin_kafka, producer, [{enabled, false}]),
     ?assertEqual({module, emqx_plugin_kafka_producer}, code:ensure_loaded(emqx_plugin_kafka_producer)),
     ?assert(erlang:function_exported(emqx_plugin_kafka_producer, on_message_publish, 1)),
-    ?assertEqual(ok, emqx_plugin_kafka_producer:on_message_publish(message())).
+    Msg = message(),
+    ?assertEqual({ok, Msg}, emqx_plugin_kafka_producer:on_message_publish(Msg)).
 
-on_message_publish_one_arity_returns_ok_when_no_rules_match() ->
+on_message_publish_one_arity_returns_message_when_no_rules_match() ->
     application:set_env(emqx_plugin_kafka, producer, [
         {enabled, true},
         {rules, [{<<"alarm/#">>, <<"kafka-alarm">>}]}
     ]),
-    ?assertEqual(ok, emqx_plugin_kafka_producer:on_message_publish(message())).
+    Msg = message(),
+    ?assertEqual({ok, Msg}, emqx_plugin_kafka_producer:on_message_publish(Msg)).
 
 on_client_connected_returns_ok_when_disabled() ->
     application:set_env(emqx_plugin_kafka, connection_events, [{enabled, false}]),

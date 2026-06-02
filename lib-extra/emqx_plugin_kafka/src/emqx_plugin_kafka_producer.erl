@@ -22,11 +22,11 @@ on_message_publish(Msg) ->
     case publish_plan(Msg, Conf) of
         {ok, Plans} ->
             ClientId = maps:get(client_id, Conf),
-            lists:foreach(fun(Plan) -> produce(ClientId, Plan) end, Plans),
-            ok;
+            lists:foreach(fun(Plan) -> produce(ClientId, Plan) end, Plans);
         skip ->
             ok
-    end.
+    end,
+    {ok, Msg}.
 
 on_client_connected(ClientInfo, ConnInfo) ->
     Conf = emqx_plugin_kafka_config:cached(),

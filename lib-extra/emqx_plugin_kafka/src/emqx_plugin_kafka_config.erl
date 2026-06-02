@@ -48,21 +48,24 @@ consumer(Opts) ->
     #{
         enabled => proplists:get_value(enabled, Opts, false),
         group_id => to_bin(proplists:get_value(group_id, Opts, <<"emqx_plugin_kafka">>)),
-        topics => [to_bin(T) || T <- proplists:get_value(topics, Opts, [])],
+        topics => [to_trimmed_bin(T) || T <- proplists:get_value(topics, Opts, [])],
         begin_offset => proplists:get_value(begin_offset, Opts, earliest)
     }.
 
 connection_events(Opts) ->
     #{
         enabled => proplists:get_value(enabled, Opts, false),
-        topic => to_bin(proplists:get_value(topic, Opts, <<"mqtt_connection_events">>))
+        topic => to_trimmed_bin(proplists:get_value(topic, Opts, <<"mqtt_connection_events">>))
     }.
 
 normalize_rules(Rules) ->
-    [{to_bin(Filter), to_bin(KafkaTopic)} || {Filter, KafkaTopic} <- Rules].
+    [{to_trimmed_bin(Filter), to_trimmed_bin(KafkaTopic)} || {Filter, KafkaTopic} <- Rules].
 
 normalize_topic_filters(Filters) ->
-    [to_bin(Filter) || Filter <- Filters].
+    [to_trimmed_bin(Filter) || Filter <- Filters].
+
+to_trimmed_bin(V) ->
+    unicode:characters_to_binary(string:trim(unicode:characters_to_list(to_bin(V)))).
 
 to_bin(V) when is_binary(V) ->
     V;

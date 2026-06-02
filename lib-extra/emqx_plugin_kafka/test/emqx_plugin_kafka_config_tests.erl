@@ -8,6 +8,7 @@ config_test_() ->
      fun cleanup/1,
      [fun defaults/0,
       fun normalizes_binary_rules/0,
+      fun trims_topic_values/0,
       fun normalizes_excluded_topics/0,
       fun connection_events_defaults/0,
       fun connection_events_normalizes_topic/0]}.
@@ -82,6 +83,34 @@ normalizes_binary_rules() ->
     ?assertEqual(true, maps:get(publish_base64, Producer)),
     ?assertEqual([{<<"a/+/c">>, <<"kafka_a">>}, {<<"b/#">>, <<"kafka_b">>}],
                  maps:get(rules, Producer)).
+
+trims_topic_values() ->
+    application:set_env(emqx_plugin_kafka, producer, [
+        {enabled, true},
+        {excluded_topics, [" a/+/down ", <<" b/# ">>]},
+        {rules, [
+            {" a/+/c ", " kafka_a "},
+            {<<" b/# ">>, <<" kafka_b ">>}
+        ]}
+    ]),
+    application:set_env(emqx_plugin_kafka, consumer, [
+        {enabled, true},
+        {topics, [" aiot_mqtt_event_down ", <<" aiot_mqtt_property_down ">>]}
+    ]),
+    application:set_env(emqx_plugin_kafka, connection_events, [
+        {enabled, true},
+        {topic, " mqtt_connection_events_custom "}
+    ]),
+    Conf = emqx_plugin_kafka_config:get(),
+    Producer = maps:get(producer, Conf),
+    Consumer = maps:get(consumer, Conf),
+    ConnectionEvents = maps:get(connection_events, Conf),
+    ?assertEqual([<<"a/+/down">>, <<"b/#">>], maps:get(excluded_topics, Producer)),
+    ?assertEqual([{<<"a/+/c">>, <<"kafka_a">>}, {<<"b/#">>, <<"kafka_b">>}],
+                 maps:get(rules, Producer)),
+    ?assertEqual([<<"aiot_mqtt_event_down">>, <<"aiot_mqtt_property_down">>],
+                 maps:get(topics, Consumer)),
+    ?assertEqual(<<"mqtt_connection_events_custom">>, maps:get(topic, ConnectionEvents)).
 
 normalizes_excluded_topics() ->
     application:set_env(emqx_plugin_kafka, producer, [
