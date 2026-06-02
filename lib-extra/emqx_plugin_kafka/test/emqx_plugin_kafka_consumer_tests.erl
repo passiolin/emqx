@@ -4,7 +4,7 @@
 -include_lib("emqx/include/emqx.hrl").
 -include_lib("brod/include/brod.hrl").
 
-handle_message_valid_value_publishes_and_commits_test() ->
+handle_message_key_value_publishes_with_default_qos_and_commits_test() ->
     Parent = self(),
     PublishFun = fun(Msg) ->
         Parent ! {published, Msg},
@@ -12,7 +12,8 @@ handle_message_valid_value_publishes_and_commits_test() ->
     end,
     State = #{publish_fun => PublishFun},
     KafkaMsg = #kafka_message{
-        value = <<"{\"topic\":\"down/a\",\"qos\":1,\"payload\":\"hello\"}">>
+        key = <<"down/a">>,
+        value = <<"hello">>
     },
     ?assertEqual({ok, commit, State}, emqx_plugin_kafka_consumer:handle_message(KafkaMsg, State)),
     receive
@@ -24,14 +25,17 @@ handle_message_valid_value_publishes_and_commits_test() ->
         ?assert(false)
     end.
 
-handle_message_invalid_value_drops_and_commits_test() ->
+handle_message_invalid_key_drops_and_commits_test() ->
     Parent = self(),
     PublishFun = fun(Msg) ->
         Parent ! {published, Msg},
         ok
     end,
     State = #{publish_fun => PublishFun},
-    KafkaMsg = #kafka_message{value = <<"{">>},
+    KafkaMsg = #kafka_message{
+        key = <<"down/+">>,
+        value = <<"hello">>
+    },
     ?assertEqual({ok, commit, State}, emqx_plugin_kafka_consumer:handle_message(KafkaMsg, State)),
     receive
         {published, Msg} ->
@@ -46,6 +50,7 @@ handle_message_publish_failure_commits_test() ->
     end,
     State = #{publish_fun => PublishFun},
     KafkaMsg = #kafka_message{
-        value = <<"{\"topic\":\"down/a\",\"qos\":1,\"payload\":\"hello\"}">>
+        key = <<"down/a">>,
+        value = <<"hello">>
     },
     ?assertEqual({ok, commit, State}, emqx_plugin_kafka_consumer:handle_message(KafkaMsg, State)).

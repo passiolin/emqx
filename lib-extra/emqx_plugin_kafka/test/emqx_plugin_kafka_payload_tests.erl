@@ -146,6 +146,26 @@ decode_consumer_valid_payload_test() ->
     ?assert(is_binary(Msg#message.id)),
     ?assert(is_integer(Msg#message.timestamp)).
 
+decode_consumer_key_value_payload_defaults_qos_to_one_test() ->
+    {ok, Msg} = emqx_plugin_kafka_payload:decode_consumer(<<"down/a">>, <<"hello">>),
+    ?assertMatch(#message{}, Msg),
+    ?assertEqual(<<"down/a">>, Msg#message.topic),
+    ?assertEqual(1, Msg#message.qos),
+    ?assertEqual(<<"hello">>, Msg#message.payload),
+    ?assertEqual(<<"emqx_plugin_kafka">>, Msg#message.from),
+    ?assertEqual(#{dup => false, retain => false}, Msg#message.flags),
+    ?assertEqual(#{}, Msg#message.headers),
+    ?assert(is_binary(Msg#message.id)),
+    ?assert(is_integer(Msg#message.timestamp)).
+
+decode_consumer_key_value_rejects_wildcard_topic_test() ->
+    ?assertEqual({error, {invalid_topic, <<"down/+">>}},
+                 emqx_plugin_kafka_payload:decode_consumer(<<"down/+">>, <<"hello">>)).
+
+decode_consumer_key_value_rejects_non_binary_payload_test() ->
+    ?assertEqual({error, {invalid_payload, undefined}},
+                 emqx_plugin_kafka_payload:decode_consumer(<<"down/a">>, undefined)).
+
 decode_consumer_rejects_wildcard_topic_test() ->
     Json = <<"{\"topic\":\"down/+\",\"qos\":1,\"payload\":\"hello\"}">>,
     ?assertEqual({error, {invalid_topic, <<"down/+">>}},

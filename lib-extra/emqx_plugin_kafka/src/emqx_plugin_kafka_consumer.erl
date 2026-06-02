@@ -13,8 +13,8 @@ init(GroupData, State) ->
             {ok, State}
     end.
 
-handle_message(#kafka_message{value = Value}, State) ->
-    case emqx_plugin_kafka_payload:decode_consumer(Value) of
+handle_message(#kafka_message{key = Topic, value = Payload}, State) ->
+    case emqx_plugin_kafka_payload:decode_consumer(Topic, Payload) of
         {ok, Msg} ->
             publish(Msg, State),
             ok;
