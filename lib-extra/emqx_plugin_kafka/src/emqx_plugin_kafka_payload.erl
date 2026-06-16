@@ -6,13 +6,10 @@
     encode_publish/2,
     encode_connection_event/3,
     encode_connection_event/4,
-    decode_consumer/1,
-    decode_consumer/2
+    decode_consumer/1
 ]).
 
 -define(FROM, <<"emqx_plugin_kafka">>).
--define(DEFAULT_CONSUMER_QOS, 1).
-
 encode_publish(Msg = #message{}, PublishBase64) ->
     From = from_bin(Msg#message.from),
     Payload = #{
@@ -59,16 +56,6 @@ decode_consumer(Json) ->
         {ok, Other} ->
             {error, {invalid_json, Other}};
         {error, Reason} ->
-            {error, Reason}
-    end.
-
-decode_consumer(Topic0, Payload0) ->
-    try
-        Topic = validate_topic(Topic0),
-        Payload = validate_payload(Payload0),
-        {ok, consumer_message(Topic, ?DEFAULT_CONSUMER_QOS, Payload)}
-    catch
-        error:Reason ->
             {error, Reason}
     end.
 

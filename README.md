@@ -268,16 +268,19 @@ kafka.consumer.enabled = false
 
 开启后，插件会消费 `kafka.consumer.topics` 中配置的 Kafka topic，并发布到 EMQX。
 
-Kafka 到 MQTT 的映射固定为：
+Kafka 到 MQTT 的映射固定为从 Kafka message value 解析 JSON：
 
-- Kafka message key 作为 MQTT topic。
-- Kafka message value 作为 MQTT payload。
-- MQTT QoS 默认使用 `1`。
+- Kafka message key 不参与 MQTT 发布。
+- Kafka message value 必须是 JSON object。
+- JSON 中的 `topic` 作为 MQTT topic。
+- JSON 中的 `qos` 作为 MQTT QoS。
+- JSON 中的 `payload` 作为 MQTT payload。
 
 校验规则：
 
-- Kafka message key 必须是非空字符串，不能包含 MQTT 通配符 `+` 或 `#`。
-- Kafka message value 必须是字符串或 bytes。
+- `topic` 必须是非空字符串，不能包含 MQTT 通配符 `+` 或 `#`。
+- `qos` 必须是 `0`、`1` 或 `2`。
+- `payload` 必须是字符串或 bytes。
 
 合法消息会通过 `emqx_broker:safe_publish/1` 发布进 EMQX。
 
@@ -435,14 +438,12 @@ mosquitto_pub -h 127.0.0.1 -p 1883 -i client-a -t sensor/a/up -m hello -q 1
 mosquitto_sub -h 127.0.0.1 -p 1883 -t down/a -q 1
 ```
 
-向 Kafka topic `mqtt_downlink` 写入，key 为 MQTT topic，value 为 MQTT payload：
+向 Kafka topic `mqtt_downlink` 写入 JSON value：
 
 ```bash
-printf 'down/a:hello-from-kafka\n' | kafka-console-producer.sh \
+printf '{"topic":"down/a","qos":1,"payload":"hello-from-kafka"}\n' | kafka-console-producer.sh \
   --bootstrap-server 127.0.0.1:9092 \
-  --topic mqtt_downlink \
-  --property parse.key=true \
-  --property key.separator=:
+  --topic mqtt_downlink
 ```
 
 期望 MQTT subscriber 收到：
