@@ -9,7 +9,6 @@
 start(_StartType, _StartArgs) ->
     _ = emqx_plugin_kafka_config:reload(),
     {ok, Sup} = emqx_plugin_kafka_sup:start_link(),
-    emqx_plugin_kafka:load([]),
     {ok, Sup}.
 
 stop(_State) ->

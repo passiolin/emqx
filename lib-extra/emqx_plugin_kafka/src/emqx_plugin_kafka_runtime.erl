@@ -9,6 +9,7 @@
     call_with_timeout/2,
     client_config/1,
     ensure_dependency_paths/0,
+    maybe_load_hooks/1,
     producer_topics/1,
     start_client_call/2
 ]).
@@ -24,7 +25,7 @@ init([]) ->
     Conf = emqx_plugin_kafka_config:get(),
     ClientId = maps:get(client_id, Conf),
     erlang:send_after(0, self(), kafka_connect),
-    {ok, #{client_id => ClientId, conf => Conf, connected => false}}.
+    {ok, #{client_id => ClientId, conf => Conf, connected => false, hooks_loaded => false}}.
 
 handle_call(_Req, _From, State) ->
     {reply, ok, State}.
@@ -126,7 +127,7 @@ connect(Conf, State) ->
 start_client(Hosts, ClientId, ClientConfig, Conf, State) ->
     case start_client(Hosts, ClientId, ClientConfig, Conf) of
         {ok, RuntimeState} ->
-            maps:merge(State, RuntimeState#{connected => true});
+            maybe_load_hooks(maps:merge(State, RuntimeState#{connected => true}));
         {stop, Reason} ->
             ?LOG(warning, "Kafka runtime start failed reason=~p", [Reason]),
             catch brod:stop_client(ClientId),
@@ -176,10 +177,7 @@ start_runtime_children(ClientId, Conf) ->
             {error, Reason}
     end.
 
-start_producers(
-    ClientId,
-    #{producer := #{enabled := true}, producer_config := ProducerConfig} = Conf
-) ->
+start_producers(ClientId, #{producer_config := ProducerConfig} = Conf) ->
     start_producer_topics(ClientId, producer_topics(Conf), ProducerConfig);
 start_producers(_ClientId, _Conf) ->
     ok.
@@ -187,7 +185,7 @@ start_producers(_ClientId, _Conf) ->
 producer_topics(Conf) ->
     lists:usort(producer_rule_topics(Conf) ++ connection_event_topics(Conf)).
 
-producer_rule_topics(#{producer := #{rules := Rules}}) ->
+producer_rule_topics(#{producer := #{enabled := true, rules := Rules}}) ->
     [KafkaTopic || {_Filter, KafkaTopic} <- Rules];
 producer_rule_topics(_Conf) ->
     [].
@@ -196,6 +194,12 @@ connection_event_topics(#{connection_events := #{enabled := true, topic := Kafka
     [KafkaTopic];
 connection_event_topics(_Conf) ->
     [].
+
+maybe_load_hooks(#{hooks_loaded := true} = State) ->
+    State;
+maybe_load_hooks(State) ->
+    ok = emqx_plugin_kafka:load([]),
+    State#{hooks_loaded => true}.
 
 start_producer_topics(_ClientId, [], _ProducerConfig) ->
     ok;

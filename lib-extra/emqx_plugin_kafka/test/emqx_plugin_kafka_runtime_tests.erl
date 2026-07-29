@@ -112,3 +112,31 @@ producer_topics_skip_disabled_connection_events_test() ->
         [<<"kafka_sensor_up">>],
         emqx_plugin_kafka_runtime:producer_topics(Conf)
     ).
+
+producer_topics_keep_connection_events_when_regular_producer_is_disabled_test() ->
+    Conf = #{
+        producer => #{
+            enabled => false,
+            rules => [{<<"sensor/+/up">>, <<"kafka_sensor_up">>}]
+        },
+        connection_events => #{
+            enabled => true,
+            topic => <<"mqtt_connection_events">>
+        }
+    },
+    ?assertEqual(
+        [<<"mqtt_connection_events">>],
+        emqx_plugin_kafka_runtime:producer_topics(Conf)
+    ).
+
+runtime_loads_hooks_once_after_kafka_is_ready_test() ->
+    ok = meck:new(emqx_plugin_kafka, [non_strict, passthrough, no_history]),
+    ok = meck:expect(emqx_plugin_kafka, load, fun(_) -> ok end),
+    try
+        ReadyState = emqx_plugin_kafka_runtime:maybe_load_hooks(#{hooks_loaded => false}),
+        ?assertEqual(#{hooks_loaded => true}, ReadyState),
+        ?assertEqual(ReadyState, emqx_plugin_kafka_runtime:maybe_load_hooks(ReadyState)),
+        ?assert(meck:called(emqx_plugin_kafka, load, [[]]))
+    after
+        ok = meck:unload(emqx_plugin_kafka)
+    end.
